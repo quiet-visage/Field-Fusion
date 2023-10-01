@@ -1,12 +1,12 @@
-function include_msdf()
+function include_ff()
   includedirs "src/"
-  links "msdflib"
+  links "fieldfusion"
 end
 
-workspace "msdf"
+workspace "fieldfusion"
   language "C++"
   cppdialect "C++17"
-  configurations {"Debug", "Release"}
+  configurations {"Release", "Debug"}
   links {
     "GLEW",
     "EGL", 
@@ -22,7 +22,7 @@ workspace "msdf"
   filter "configurations:Release"
     optimize "Full"
 
-project "msdflib"
+project "fieldfusion"
   files "src/**"
   kind "StaticLib"
   includedirs "/usr/include/freetype2"
@@ -31,4 +31,4 @@ project "demo"
   kind "WindowedApp"
   files {"demo/**"}
   includedirs {"/usr/include/freetype2"}
-  include_msdf()
+  include_ff()

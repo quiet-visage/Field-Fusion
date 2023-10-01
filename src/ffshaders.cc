@@ -1,6 +1,6 @@
-#include "shaders.hh"
+#include "ffshaders.hh"
 
-namespace msdf {
+namespace ff {
 const char *font_fragment = R"SHADER(
 precision highp float;
 in vec2 text_pos;
@@ -615,4 +615,4 @@ vec3 get_pixel_distance(vec2 point) {
     return d;
 }
 )SHADER";
-} // namespace msdf
+}  // namespace ff

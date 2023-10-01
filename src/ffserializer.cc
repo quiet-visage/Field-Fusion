@@ -1,9 +1,12 @@
-#include "serializer.hh"
-#include "freetype/freetype.h"
-#include "freetype/ftoutln.h"
+#include "ffserializer.hh"
+
 #include <cmath>
 
-namespace msdf {
+#include "fferror.hh"
+#include "freetype/freetype.h"
+#include "freetype/ftoutln.h"
+
+namespace ff {
 namespace internal {
 enum Color : int { BLACK = 0, RED = 1, GREEN = 2, YELLOW = 3, BLUE = 4, MAGENTA = 5, CYAN = 6, WHITE = 7 };
 struct vec2 {
@@ -49,8 +52,8 @@ struct glyph_data_ctx {
 int add_contour(const FT_Vector *to, void *user) {
     struct glyph_data_ctx *ctx = (struct glyph_data_ctx *)user;
     ctx->segment += 1; /* Start contour on a fresh glyph. */
-    ctx->segment[0].x = to->x / SERIALIZER_SCALE;
-    ctx->segment[0].y = to->y / SERIALIZER_SCALE;
+    ctx->segment[0].x = to->x / kserializer_scale;
+    ctx->segment[0].y = to->y / kserializer_scale;
     ctx->meta_buffer[0] += 1;                /* Increase the number of contours. */
     ctx->meta_buffer[ctx->meta_index++] = 0; /* Set winding to zero */
     ctx->nsegments_index = ctx->meta_index++;
@@ -60,12 +63,11 @@ int add_contour(const FT_Vector *to, void *user) {
 }
 int add_linear(const FT_Vector *to, void *user) {
     struct glyph_data_ctx *ctx = (struct glyph_data_ctx *)user;
-    ctx->segment[1].x = to->x / SERIALIZER_SCALE;
-    ctx->segment[1].y = to->y / SERIALIZER_SCALE;
+    ctx->segment[1].x = to->x / kserializer_scale;
+    ctx->segment[1].y = to->y / kserializer_scale;
 
     /* Some glyphs contain zero-dimensional segments, ignore those. */
-    if (ctx->segment[1].x == ctx->segment[0].x && ctx->segment[1].y == ctx->segment[0].y)
-        return 0;
+    if (ctx->segment[1].x == ctx->segment[0].x && ctx->segment[1].y == ctx->segment[0].y) return 0;
 
     ctx->segment += 1;
 
@@ -77,10 +79,10 @@ int add_linear(const FT_Vector *to, void *user) {
 int add_quad(const FT_Vector *control, const FT_Vector *to, void *user) {
     struct glyph_data_ctx *ctx = (struct glyph_data_ctx *)user;
 
-    ctx->segment[1].x = control->x / SERIALIZER_SCALE;
-    ctx->segment[1].y = control->y / SERIALIZER_SCALE;
-    ctx->segment[2].x = to->x / SERIALIZER_SCALE;
-    ctx->segment[2].y = to->y / SERIALIZER_SCALE;
+    ctx->segment[1].x = control->x / kserializer_scale;
+    ctx->segment[1].y = control->y / kserializer_scale;
+    ctx->segment[2].x = to->x / kserializer_scale;
+    ctx->segment[2].y = to->y / kserializer_scale;
 
     /* Some glyphs contain "bugs", where a quad segment is actually a linear
        segment with a double point. Treat it as a linear segment. */
@@ -95,7 +97,7 @@ int add_quad(const FT_Vector *control, const FT_Vector *to, void *user) {
     ctx->meta_buffer[ctx->nsegments_index]++;
     return 0;
 }
-} // namespace outline_functions
+}  // namespace outline_functions
 constexpr const Color start[3] = {CYAN, MAGENTA, YELLOW};
 void switch_color(enum Color *color, unsigned long long *seed, enum Color *_banned) {
     enum Color banned = _banned ? *_banned : BLACK;
@@ -133,11 +135,10 @@ inline vec2 segment_point(const vec2 *points, int npoints, float param) {
     return mix(mix(points[0], points[1], param), mix(points[npoints - 2], points[npoints - 1], param), param);
 }
 inline float shoelace(const vec2 a, const vec2 b) { return (b.x - a.x) * (a.y + b.y); }
-} // namespace internal
+}  // namespace internal
 
-int serialize_glyph(FT_Face face, int code, char *meta_buffer, float *point_buffer) {
-    if (FT_Load_Char(face, code, FT_LOAD_NO_SCALE))
-        return -1;
+Result<void> serialize_glyph(FT_Face face, int code, char *meta_buffer, float *point_buffer) noexcept {
+    if (FT_Load_Char(face, code, FT_LOAD_NO_SCALE)) return Error::FtLoadCharFail;
 
     FT_Outline_Funcs fns;
     fns.shift = 0;
@@ -156,8 +157,7 @@ int serialize_glyph(FT_Face face, int code, char *meta_buffer, float *point_buff
        contour. */
     ctx.segment = ((internal::vec2 *)&point_buffer[0]) - 1;
 
-    if (FT_Outline_Decompose(&face->glyph->outline, &fns, &ctx))
-        return -1;
+    if (FT_Outline_Decompose(&face->glyph->outline, &fns, &ctx)) return Error::FtDecomposeFail;
 
     /* Calculate windings. */
     int meta_index = 0;
@@ -243,8 +243,7 @@ int serialize_glyph(FT_Face face, int code, char *meta_buffer, float *point_buff
         if (nsegments) {
             int prev_npoints = meta_buffer[meta_index + 2 * (nsegments - 2) + 1];
             internal::vec2 *prev_ptr = point_ptr;
-            for (int j = 0; j < nsegments - 1; ++j)
-                prev_ptr += (meta_buffer[meta_index + 2 * j + 1] - 1);
+            for (int j = 0; j < nsegments - 1; ++j) prev_ptr += (meta_buffer[meta_index + 2 * j + 1] - 1);
             internal::vec2 prev_direction = internal::segment_direction(prev_ptr, prev_npoints, 1);
             int index = 0;
             internal::vec2 *cur_points = point_ptr;
@@ -324,16 +323,14 @@ int serialize_glyph(FT_Face face, int code, char *meta_buffer, float *point_buff
         point_ptr += 1;
     }
 
-    return 0;
+    return {};
 }
 
 /* We need two rounds of decomposing, the first one will just figure out
    how much space we need to serialize the glyph, and the second one
    serializes it and generates colour mapping for the segments. */
-int glyph_buffer_size(FT_Face face, int code, size_t *meta_size, size_t *point_size) {
-
-    if (FT_Load_Char(face, code, FT_LOAD_NO_SCALE))
-        return -1;
+Result<void> glyph_buffer_size(FT_Face face, int code, size_t *meta_size, size_t *point_size) noexcept {
+    if (FT_Load_Char(face, code, FT_LOAD_NO_SCALE)) return Error::FtLoadCharFail;
 
     FT_Outline_Funcs fns;
     fns.shift = 0;
@@ -343,12 +340,11 @@ int glyph_buffer_size(FT_Face face, int code, size_t *meta_size, size_t *point_s
     fns.conic_to = internal::outline_functions::add_quad_size;
     fns.cubic_to = internal::outline_functions::add_cubic_size;
     struct internal::outline_functions::glyph_len_ctx ctx = {1, 0};
-    if (FT_Outline_Decompose(&face->glyph->outline, &fns, &ctx))
-        return -1;
+    if (FT_Outline_Decompose(&face->glyph->outline, &fns, &ctx)) return Error::FtDecomposeFail;
 
     *meta_size = ctx.meta_size;
     *point_size = ctx.data_size * 2 * sizeof(float);
 
-    return 0;
+    return {};
 }
-} // namespace msdf
+}  // namespace ff
