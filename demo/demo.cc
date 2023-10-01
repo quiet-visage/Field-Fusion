@@ -22,18 +22,18 @@ constexpr const char *kwin_title = "msdf demo";
 constexpr const char *kfont_path{"/usr/share/fonts/TTF/JetBrainsMonoNerdFontMono-Regular.ttf"};
 
 template <typename Lambda>
-struct SG {
+struct ScopeGuard {
     Lambda _callback;
-    [[nodiscard("callback gets called immediatly if dicarded")]] explicit SG(Lambda callback)
+    [[nodiscard("callback gets called immediatly if dicarded")]] explicit ScopeGuard(Lambda callback)
         : _callback(std::move(callback)) {}
-    SG(const SG &) = delete;
-    SG(SG &&) = delete;
-    SG &operator=(const SG &) = delete;
-    SG &operator=(SG &&) = delete;
-    ~SG() { _callback(); };
+    ScopeGuard(const ScopeGuard &) = delete;
+    ScopeGuard(ScopeGuard &&) = delete;
+    ScopeGuard &operator=(const ScopeGuard &) = delete;
+    ScopeGuard &operator=(ScopeGuard &&) = delete;
+    ~ScopeGuard() { _callback(); };
 };
 
-#define defer(code) SG([&]() { code; })
+#define defer(code) ScopeGuard([&]() { code; })
 
 static GLFWwindow *window;
 void init_gl_ctx() {
