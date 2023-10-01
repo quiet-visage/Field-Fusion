@@ -7,19 +7,19 @@
 
 #include "fieldfusion.hh"
 
-extern const char *VRTX_SRC;
-extern const char *FRGT_SRC;
-constexpr const int WIN_WIDTH = 1366;
-constexpr const int WIN_HEIGHT = 768;
-constexpr const float INITIAL_FONT_SIZE = 8.0f;
-constexpr const float FONT_SIZE_INCREMENT = 4.0f;
-constexpr const float LINE_PADDING = 2.0f;
-constexpr const int LINE_REPEAT = 12;
-constexpr const long WHITE = 0xffffffff;
-static const std::u32string TEXT = U"The quick brown fox jumps over the lazy dog";
-static const std::u32string UNICODE_TEXT = U"Быстрая бурая лиса перепрыгивает через ленивую собаку";
-constexpr const char *WIN_TITLE = "msdf demo";
-constexpr const char *FONT{"/usr/share/fonts/TTF/JetBrainsMonoNerdFontMono-Regular.ttf"};
+extern const char *kvertex_shader_src;
+extern const char *kfragment_shader_src;
+constexpr const int kwindow_width = 1366;
+constexpr const int kwindow_height = 768;
+constexpr const float kinitial_font_size = 8.0f;
+constexpr const float kfont_size_increment = 4.0f;
+constexpr const float kline_padding = 2.0f;
+constexpr const int kline_repeat = 12;
+constexpr const long kwhite = 0xffffffff;
+static const std::u32string ktext = U"The quick brown fox jumps over the lazy dog";
+static const std::u32string kunicode_text = U"Быстрая бурая лиса перепрыгивает через ленивую собаку";
+constexpr const char *kwin_title = "msdf demo";
+constexpr const char *kfont_path{"/usr/share/fonts/TTF/JetBrainsMonoNerdFontMono-Regular.ttf"};
 
 template <typename Lambda>
 struct SG {
@@ -39,7 +39,7 @@ static GLFWwindow *window;
 void init_gl_ctx() {
     assert(glfwInit() == GLFW_TRUE);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-    window = glfwCreateWindow(WIN_WIDTH, WIN_HEIGHT, WIN_TITLE, 0, 0);
+    window = glfwCreateWindow(kwindow_width, kwindow_height, kwin_title, 0, 0);
     glfwMakeContextCurrent(window);
     assert(glewInit() == GLEW_OK);
     glEnable(GL_BLEND);
@@ -57,8 +57,8 @@ int get_shader_program() {
     auto freevshader = defer(glDeleteShader(vshader));
     auto freefshader = defer(glDeleteShader(fshader));
 
-    glShaderSource(vshader, 1, &VRTX_SRC, 0);
-    glShaderSource(fshader, 1, &FRGT_SRC, 0);
+    glShaderSource(vshader, 1, &kvertex_shader_src, 0);
+    glShaderSource(fshader, 1, &kfragment_shader_src, 0);
     glCompileShader(vshader);
     glCompileShader(fshader);
     glAttachShader(shader_program, vshader);
@@ -77,46 +77,49 @@ int main() {
         return 1;
     }
     auto free_ctx = defer(ctx->destroy());
-
-    auto fnt = ff::Font::create(ctx, FONT);
-    if (not fnt) {
-        std::cerr << "field fusion error occurred. code: " << (int)fnt.error_ << std::endl;
+    ff::Font fnt(kfont_path);
+    auto fnt_res = fnt.init_face(ctx);
+    if (not fnt_res) {
+        std::cerr << "field fusion error occurred. code: " << (int)fnt_res.error_ << std::endl;
         return 1;
     }
-    auto free_fnt = defer(fnt->destroy());
-
-    auto atlas = ff::Atlas::create(ctx, WIN_WIDTH, 2.0f);
-    fnt->generate_ascii(ctx, atlas);
-
+    fnt.init_textures();
+    auto free_fnt = defer(fnt.destroy());
+    ff::Atlas atlas(1024, 2);
+    atlas.init_textures();
+    fnt.generate_ascii(ctx, atlas);
     ff::Glyphs glyphs;
     glyphs.reserve(255);
-    float y0 = INITIAL_FONT_SIZE;
-    int size0 = INITIAL_FONT_SIZE;
-    for (size_t i = 0; i < LINE_REPEAT - 1; i++) {
-        auto line = fnt->print_unicode(ctx, atlas, TEXT, 0, y0, WHITE, size0);
+
+    float y0 = kinitial_font_size;
+    int size0 = kinitial_font_size;
+    for (size_t i = 0; i < kline_repeat - 1; i++) {
+        auto line = fnt.print_unicode(ctx, atlas, ktext, 0, y0, kwhite, size0);
         if (not line) {
             std::cerr << "field fusion error occurred. code: " << (int)line.error_ << std::endl;
             return 1;
         }
         glyphs.insert(glyphs.end(), line->begin(), line->end());
-        size0 += FONT_SIZE_INCREMENT;
-        y0 += size0 + LINE_PADDING;
+        size0 += kfont_size_increment;
+        y0 += size0 + kline_padding;
     }
-    size0 -= FONT_SIZE_INCREMENT * 2;
-    auto unicode_line = fnt->print_unicode(ctx, atlas, UNICODE_TEXT, 0, y0, WHITE, size0);
-    glyphs.insert(glyphs.end(), unicode_line->begin(), unicode_line->end());
 
+    size0 -= kfont_size_increment * 2;
+    auto unicode_line = fnt.print_unicode(ctx, atlas, kunicode_text, 0, y0, kwhite, size0);
+    if (not unicode_line) {
+        std::cerr << "field fusion error occurred. code: " << (int)unicode_line.error_ << std::endl;
+        return 1;
+    }
+
+    glyphs.insert(glyphs.end(), unicode_line->begin(), unicode_line->end());
     float projection[4][4];
-    ff::ortho(0, WIN_WIDTH, WIN_HEIGHT, 0, -1.0f, 1.0f, projection);
+    ff::ortho(0, kwindow_width, kwindow_height, 0, -1.0f, 1.0f, projection);
 
     auto shader_program = get_shader_program();
-    return 1;
 
     for (; not glfwWindowShouldClose(window);) {
         glClear(GL_COLOR_BUFFER_BIT);
-
-        { fnt->render(ctx, atlas, glyphs, (float *)projection); }
-
+        { fnt.draw(ctx, atlas, glyphs, (float *)projection); }
         glUseProgram(shader_program);
         glBindTexture(GL_TEXTURE_2D, atlas.atlas_texture_);
         glBegin(GL_QUADS);
@@ -134,7 +137,7 @@ int main() {
     destroy_gl_ctx();
 }
 
-const char *VRTX_SRC = R"SHADER(#version 330 core
+const char *kvertex_shader_src = R"SHADER(#version 330 core
 layout (location = 0) in vec4 vertex;
 out vec2 text_pos;
 void main() {
@@ -143,7 +146,7 @@ void main() {
 };
 )SHADER";
 
-const char *FRGT_SRC = R"SHADER(#version 330 core
+const char *kfragment_shader_src = R"SHADER(#version 330 core
 precision mediump float;
 in vec2 text_pos;
 uniform sampler2D tex;

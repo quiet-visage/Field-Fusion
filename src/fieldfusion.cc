@@ -130,57 +130,35 @@ void ortho(float left, float right, float bottom, float top, float nearVal, floa
     return result;
 }
 
-[[nodiscard]] Result<Font> Font::create(const Context &ctx, const char *font_name, const float scale,
-                                        const float range) noexcept {
-    FT_Face face;
-    Font result;
-    result.font_name_ = font_name;
-    result.scale_ = scale;
-    result.range_ = range;
-
-    if (FT_New_Face(ctx.ft_library_, result.font_name_, 0, &face)) return Error::FtFaceInitializationFail;
-
-    FT_Select_Charmap(face, ft_encoding_unicode);
-
-    result.face_ = face;
-    result.vertical_advance_ = (float)(result.face_->ascender - result.face_->descender);
-
-    glGenBuffers(1, &result.meta_input_buffer_);
-    glGenBuffers(1, &result.point_input_buffer_);
-    glGenTextures(1, &result.meta_input_texture_);
-    glGenTextures(1, &result.point_input_texture_);
-
-    return result;
+[[nodiscard]] Result<void> Font::init_face(const Context &ctx) noexcept {
+    if (FT_New_Face(ctx.ft_library_, font_path_, 0, &face_)) return Error::FtFaceInitializationFail;
+    FT_Select_Charmap(face_, ft_encoding_unicode);
+    vertical_advance_ = (float)(face_->ascender - face_->descender);
+    glGenBuffers(1, &meta_input_buffer_);
+    glGenBuffers(1, &point_input_buffer_);
+    glGenTextures(1, &meta_input_texture_);
+    glGenTextures(1, &point_input_texture_);
+    return {};
 }
 
-[[nodiscard]] Atlas Atlas::create(Context &ctx, int texture_width, int padding) noexcept {
-    Atlas result{0};
-    result.texture_width_ = texture_width ? texture_width : ctx.max_texture_size_;
+void Font::init_textures() noexcept {
+    glGenBuffers(1, &meta_input_buffer_);
+    glGenBuffers(1, &point_input_buffer_);
+    glGenTextures(1, &meta_input_texture_);
+    glGenTextures(1, &point_input_texture_);
+}
 
-    result.nglyphs_ = 0;
-    result.nallocated_ = 0;
-    result.offset_x_ = 1;
-    result.offset_y_ = 1;
-    result.y_increment_ = 0;
-    result.texture_height_ = 0;
-    result.padding_ = padding;
-
-    glGenBuffers(1, &result.index_buffer_);
-    glGenTextures(1, &result._index_texture);
-
-    glGenTextures(1, &result.atlas_texture_);
-    glGenFramebuffers(1, &result.atlas_framebuffer_);
-
-    result.refcount_ = 0;
-
-    return result;
+void Atlas::init_textures() noexcept {
+    glGenBuffers(1, &index_buffer_);
+    glGenTextures(1, &index_texture_);
+    glGenTextures(1, &atlas_texture_);
+    glGenFramebuffers(1, &atlas_framebuffer_);
 }
 
 Result<void> Font::generate_glyphs(const Context &ctx, Atlas &atlas,
                                    const std::vector<int> &codepoint) noexcept {
     GLint original_viewport[4];
     glGetIntegerv(GL_VIEWPORT, original_viewport);
-
     int nrender = codepoint.size();
 
     if (nrender <= 0) return {};
@@ -307,7 +285,7 @@ Result<void> Font::generate_glyphs(const Context &ctx, Atlas &atlas,
     glBindTexture(GL_TEXTURE_BUFFER, 0);
 
     glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_BUFFER, atlas._index_texture);
+    glBindTexture(GL_TEXTURE_BUFFER, atlas.index_texture_);
     glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, atlas.index_buffer_);
     glBindTexture(GL_TEXTURE_BUFFER, 0);
 
@@ -444,8 +422,8 @@ Result<void> Font::generate_ascii(const Context &ctx, Atlas &atlas) noexcept {
     return generate_glyphs(ctx, atlas, codepoint);
 }
 
-void Font::render(const Context &ctx, Atlas &atlas, std::vector<Glyph> glyphs,
-                  const float *projection) noexcept {
+void Font::draw(const Context &ctx, Atlas &atlas, std::vector<Glyph> glyphs,
+                const float *projection) noexcept {
     for (int i = 0; i < glyphs.size(); ++i) {
         MapItem *e = character_index_.get(glyphs.at(i).codepoint);
         glyphs.at(i).codepoint = e->codepoint_index;
@@ -488,7 +466,7 @@ void Font::render(const Context &ctx, Atlas &atlas, std::vector<Glyph> glyphs,
     glUniform1i(ctx.uniforms_.atlas, 0);
 
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_BUFFER, atlas._index_texture);
+    glBindTexture(GL_TEXTURE_BUFFER, atlas.index_texture_);
     glUniform1i(ctx.uniforms_.index, 1);
 
     glUniformMatrix4fv(ctx.uniforms_.font_atlas_projection, 1, GL_FALSE, (GLfloat *)atlas.projection_);

@@ -71,42 +71,43 @@ struct Atlas {
      * 1D buffer containing glyph position information per character in the
      * atlas texture.
      */
-    uint _index_texture;
+    uint index_texture_;
     uint index_buffer_;
 
     /**
      * Amount of glyphs currently rendered on the textures.
      */
-    size_t nglyphs_;
+    size_t nglyphs_{0};
 
     /**
      * The current size of the buffer index texture.
      */
-    size_t nallocated_;
+    size_t nallocated_{0};
 
     int texture_width_;
     /**
      * The amount of allocated texture height.
      */
-    int texture_height_;
+    int texture_height_{0};
 
     /**
      * The location in the atlas where the next bitmap would be rendered.
      */
-    size_t offset_y_;
-    size_t offset_x_;
-    size_t y_increment_;
+    size_t offset_y_{1};
+    size_t offset_x_{1};
+    size_t y_increment_{0};
 
     /**
      * Amount of pixels to leave blank between MSDF bitmaps.
      */
     int padding_;
-
-    [[nodiscard]] static Atlas create(Context &ctx, int texture_width, int padding) noexcept;
+    [[nodiscard]] Atlas(int texture_width, int padding = 2)
+        : texture_width_(texture_width), padding_(padding){};
+    void init_textures() noexcept;
 };
 
 struct Font {
-    const char *font_name_;
+    const char *font_path_;
     float scale_;
     float range_;
 
@@ -127,11 +128,11 @@ struct Font {
     uint meta_input_texture_;
     uint point_input_texture_;
 
-    Font(){};
-
-    [[nodiscard]] static Result<Font> create(const Context &ctx, const char *font_name,
-                                             const float scale = 4.0f, const float range = 2.0f) noexcept;
-    void render(const Context &ctx, Atlas &atlas, Glyphs glyphs, const float *projection) noexcept;
+    [[nodiscard]] Font(const char *font_path, const float scale = 4.0f, const float range = 2.0f) noexcept
+        : font_path_(font_path), scale_(scale), range_(range){};
+    [[nodiscard]] Result<void> init_face(const Context &ctx) noexcept;
+    void init_textures() noexcept;
+    void draw(const Context &ctx, Atlas &atlas, Glyphs glyphs, const float *projection) noexcept;
     Result<void> generate_glyphs(const Context &ctx, Atlas &atlas,
                                  const std::vector<int> &codepoints) noexcept;
     Result<void> generate_ascii(const Context &ctx, Atlas &atlas) noexcept;
@@ -178,5 +179,6 @@ struct Context {
     [[nodiscard]] static Result<Context> create(const char *version) noexcept;
     void inline destroy() noexcept { FT_Done_FreeType(ft_library_); };
 };
+
 void ortho(float left, float right, float bottom, float top, float nearVal, float farVal, float dest[][4]);
 }  // namespace ff
