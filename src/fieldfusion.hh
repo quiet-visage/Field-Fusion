@@ -141,6 +141,12 @@ struct Font {
                                                const float y, const long color, const float size,
                                                const bool enable_kerning = true, const float offset = 0.0f,
                                                const float skew = 0.0f, const float strength = 0.5f) noexcept;
+    [[nodiscard]] Result<Glyphs> print_unicode_vertically(Context &ctx, Atlas &atlas,
+                                                          const std::u32string_view unicode_string,
+                                                          const float x, const float y, const long color,
+                                                          const float size, const bool enable_kerning = true,
+                                                          const float offset = 0.0f, const float skew = 0.0f,
+                                                          const float strength = 0.5f) noexcept;
     void inline destroy() noexcept { FT_Done_Face(face_); }
 };
 

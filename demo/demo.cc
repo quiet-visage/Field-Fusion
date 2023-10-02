@@ -12,7 +12,7 @@ extern const char *kfragment_shader_src;
 constexpr const int kwindow_width = 1366;
 constexpr const int kwindow_height = 768;
 constexpr const float kinitial_font_size = 8.0f;
-constexpr const float kfont_size_increment = 4.0f;
+constexpr const float kfont_size_increment = 2.0f;
 constexpr const float kline_padding = 2.0f;
 constexpr const int kline_repeat = 12;
 constexpr const long kwhite = 0xffffffff;
@@ -70,12 +70,14 @@ int get_shader_program() {
 
 int main() {
     init_gl_ctx();
+    auto freeglctx = defer(destroy_gl_ctx());
 
     auto ctx = ff::Context::create("330");
     if (not ctx) {
         std::cerr << "field fusion error occurred. code: " << (int)ctx.error_ << std::endl;
         return 1;
     }
+
     auto free_ctx = defer(ctx->destroy());
     ff::Font fnt(kfont_path);
     auto fnt_res = fnt.init_face(ctx);
@@ -85,33 +87,43 @@ int main() {
     }
     fnt.init_textures();
     auto free_fnt = defer(fnt.destroy());
+
     ff::Atlas atlas(1024, 2);
     atlas.init_textures();
     fnt.generate_ascii(ctx, atlas);
-    ff::Glyphs glyphs;
-    glyphs.reserve(255);
 
+    ff::Glyphs glyphs;
+    glyphs.reserve(0xff);
     float y0 = kinitial_font_size;
     int size0 = kinitial_font_size;
     for (size_t i = 0; i < kline_repeat - 1; i++) {
-        auto line = fnt.print_unicode(ctx, atlas, ktext, 0, y0, kwhite, size0);
+        auto line = fnt.print_unicode(ctx, atlas, ktext, 200, y0, kwhite, size0);
+
         if (not line) {
             std::cerr << "field fusion error occurred. code: " << (int)line.error_ << std::endl;
             return 1;
         }
+
         glyphs.insert(glyphs.end(), line->begin(), line->end());
         size0 += kfont_size_increment;
         y0 += size0 + kline_padding;
     }
 
     size0 -= kfont_size_increment * 2;
-    auto unicode_line = fnt.print_unicode(ctx, atlas, kunicode_text, 0, y0, kwhite, size0);
+    auto unicode_line = fnt.print_unicode(ctx, atlas, kunicode_text, 200, y0, kwhite, size0);
     if (not unicode_line) {
+        std::cerr << "field fusion error occurred. code: " << (int)unicode_line.error_ << std::endl;
+        return 1;
+    }
+    auto vertical_line =
+        fnt.print_unicode_vertically(ctx, atlas, U"Field Fusion", 100, 0 + size0, 0xffffffff, 20.0f);
+    if (not vertical_line) {
         std::cerr << "field fusion error occurred. code: " << (int)unicode_line.error_ << std::endl;
         return 1;
     }
 
     glyphs.insert(glyphs.end(), unicode_line->begin(), unicode_line->end());
+    glyphs.insert(glyphs.end(), vertical_line->begin(), vertical_line->end());
     float projection[4][4];
     ff::ortho(0, kwindow_width, kwindow_height, 0, -1.0f, 1.0f, projection);
 
@@ -133,8 +145,6 @@ int main() {
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
-
-    destroy_gl_ctx();
 }
 
 const char *kvertex_shader_src = R"SHADER(#version 330 core

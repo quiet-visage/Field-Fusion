@@ -13,22 +13,22 @@ workspace "fieldfusion"
     "GL",  
     "freetype",
     "GLU", 
-    "glfw",
   }
   filter "configurations:Debug"
   defines {"DEBUG"}
   symbols "On"
+  includedirs "/usr/include/freetype2"
 
   filter "configurations:Release"
     optimize "Full"
 
 project "fieldfusion"
   files "src/**"
+  include_freetype()
   kind "StaticLib"
-  includedirs "/usr/include/freetype2"
 
 project "demo"
   kind "WindowedApp"
   files {"demo/**"}
-  includedirs {"/usr/include/freetype2"}
+  links "glfw"
   include_ff()

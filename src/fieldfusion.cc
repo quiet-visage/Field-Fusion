@@ -14,7 +14,9 @@
 
 namespace ff {
 namespace internal {
+
 const extern GLfloat _MAT4_ZERO_INIT[4][4];
+
 bool compile_shader(const char *source, GLenum type, GLuint *shader, const char *version);
 Result<MapItem *> map_get_or_add(Context &ctx, Font &font, Atlas &atlas, int32_t codepoint);
 inline int is_control(int32_t code) { return (code <= 31) || (code >= 128 && code <= 159); };
@@ -534,6 +536,42 @@ void Font::draw(const Context &ctx, Atlas &atlas, std::vector<Glyph> glyphs,
         }
 
         x0 += (idx.value()->advance[0] + kerning.x) * (size * ctx.dpi_[0] / 72.0f) / face_->units_per_EM;
+    }
+    return result;
+}
+[[nodiscard]] Result<Glyphs> Font::print_unicode_vertically(Context &ctx, Atlas &atlas,
+                                                            const std::u32string_view unicode_string,
+                                                            const float x, const float y, const long color,
+                                                            const float size, const bool enable_kerning,
+                                                            const float offset, const float skew,
+                                                            const float strength) noexcept {
+    std::vector<Glyph> result;
+    float y0 = y;
+    for (size_t i = 0; i < unicode_string.size(); i++) {
+        const auto &character = unicode_string.at(i);
+        result.push_back({});
+        auto &element = result.at(result.size() - 1);
+        element.x = x;
+        element.y = y0;
+        element.color = color;
+        element.codepoint = unicode_string.at(i);
+        element.size = size;
+        element.offset = offset;
+        element.skew = skew;
+        element.strength = strength;
+
+        auto idx = internal::map_get_or_add(ctx, *this, atlas, character);
+        if (not idx) return idx.error_;
+
+        FT_Vector kerning{0};
+        const bool should_get_kerning = enable_kerning and FT_HAS_KERNING(face_) and (i > 0);
+        if (should_get_kerning) {
+            const auto &previous_character = unicode_string.at(i - 1);
+            FT_Get_Kerning(face_, FT_Get_Char_Index(face_, previous_character),
+                           FT_Get_Char_Index(face_, character), FT_KERNING_UNSCALED, &kerning);
+        }
+
+        y0 += (idx.value()->advance[1] + kerning.y) * (size * ctx.dpi_[1] / 72.0f) / face_->units_per_EM;
     }
     return result;
 }
