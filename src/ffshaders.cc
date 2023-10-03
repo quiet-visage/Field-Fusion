@@ -16,6 +16,12 @@ float median(float r, float g, float b) {
 }
 float pxRange = 4.0;
 
+float srgb_from_linear(float value) {
+  return value<= 0.0031308f
+       ? value* 12.92f
+       : pow (value, 1.0f/2.4f) * 1.055f - 0.055f;
+}
+
 void main() {
     vec2 coords = (font_projection * vec4(text_pos, 0.0, 1.0)).xy;
 
@@ -28,6 +34,9 @@ void main() {
     sigDist *= dot(msdfUnit, 0.5/fwidth(coords));
     float opacity = clamp(sigDist + 0.5, 0.0, 1.0);
     color = mix(vec4(0.0, 0.0, 0.0, 0.0), text_color, opacity);
+    color.r = srgb_from_linear(color.x); 
+    color.g = srgb_from_linear(color.y); 
+    color.b = srgb_from_linear(color.z); 
 })SHADER";
 
 const char *font_geometry = R"SHADER(
