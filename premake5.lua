@@ -24,7 +24,6 @@ workspace "fieldfusion"
 
 project "fieldfusion"
   files "src/**"
-  include_freetype()
   kind "StaticLib"
 
 project "demo"

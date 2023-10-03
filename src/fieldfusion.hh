@@ -7,10 +7,13 @@
 #include "freetype/ftmodapi.h"
 #include FT_FREETYPE_H
 
+#include "ffatlas.hh"
 #include "fferror.hh"
+#include "fffont.hh"
 #include "ffmap.hh"
 
 namespace ff {
+
 struct Glyph {
     /**
      * X and Y coordinates in in the projection coordinates.
@@ -52,105 +55,10 @@ struct Glyph {
      */
     float strength;
 };
+
 using Glyphs = std::vector<Glyph>;
-struct Context;
-struct Atlas {
-    int refcount_; /* Amount of fonts using this atlas */
-    int implicit_; /* Set to 1 if the atlas was created automatically and not by
-                      user */
 
-    float projection_[4][4];
-
-    /**
-     * 2D RGBA atlas texture containing all MSDF-glyph bitmaps.
-     */
-    uint atlas_texture_;
-    uint atlas_framebuffer_;
-
-    /**
-     * 1D buffer containing glyph position information per character in the
-     * atlas texture.
-     */
-    uint index_texture_;
-    uint index_buffer_;
-
-    /**
-     * Amount of glyphs currently rendered on the textures.
-     */
-    size_t nglyphs_{0};
-
-    /**
-     * The current size of the buffer index texture.
-     */
-    size_t nallocated_{0};
-
-    int texture_width_;
-    /**
-     * The amount of allocated texture height.
-     */
-    int texture_height_{0};
-
-    /**
-     * The location in the atlas where the next bitmap would be rendered.
-     */
-    size_t offset_y_{1};
-    size_t offset_x_{1};
-    size_t y_increment_{0};
-
-    /**
-     * Amount of pixels to leave blank between MSDF bitmaps.
-     */
-    int padding_;
-    [[nodiscard]] Atlas(int texture_width, int padding = 2)
-        : texture_width_(texture_width), padding_(padding){};
-    void init_textures() noexcept;
-};
-
-struct Font {
-    const char *font_path_;
-    float scale_;
-    float range_;
-
-    float vertical_advance_;
-
-    Map character_index_;
-
-    /**
-     * FreeType Face handle.
-     */
-    FT_Face face_;
-
-    /**
-     * Texture buffer objects for serialized FreeType data input.
-     */
-    uint meta_input_buffer_;
-    uint point_input_buffer_;
-    uint meta_input_texture_;
-    uint point_input_texture_;
-
-    [[nodiscard]] Font(const char *font_path, const float scale = 4.0f, const float range = 2.0f) noexcept
-        : font_path_(font_path), scale_(scale), range_(range){};
-    [[nodiscard]] Result<void> init_face(const Context &ctx) noexcept;
-    void init_textures() noexcept;
-    void draw(const Context &ctx, Atlas &atlas, Glyphs glyphs, const float *projection) noexcept;
-    Result<void> generate_glyphs(const Context &ctx, Atlas &atlas,
-                                 const std::vector<int> &codepoints) noexcept;
-    Result<void> generate_ascii(const Context &ctx, Atlas &atlas) noexcept;
-    [[nodiscard]] Result<Glyphs> print_unicode(Context &ctx, Atlas &atlas,
-                                               const std::u32string_view unicode_string, const float x,
-                                               const float y, const long color, const float size,
-                                               const bool enable_kerning = true, const float offset = 0.0f,
-                                               const float skew = 0.0f, const float strength = 0.5f) noexcept;
-    [[nodiscard]] Result<Glyphs> print_unicode_vertically(Context &ctx, Atlas &atlas,
-                                                          const std::u32string_view unicode_string,
-                                                          const float x, const float y, const long color,
-                                                          const float size, const bool enable_kerning = true,
-                                                          const float offset = 0.0f, const float skew = 0.0f,
-                                                          const float strength = 0.5f) noexcept;
-    void inline destroy() noexcept { FT_Done_Face(face_); }
-};
-
-struct Context {
+struct FieldFusion {
     struct Uniforms {
         int window_projection;
         int font_atlas_projection;
@@ -171,9 +79,7 @@ struct Context {
         int metadata;
         int point_data;
     };
-
     FT_Library ft_library_;
-
     float dpi_[2];
     uint gen_shader_;
     uint render_shader_;
@@ -181,9 +87,25 @@ struct Context {
     uint bbox_vao_;
     uint bbox_vbo_;
     int max_texture_size_;
+    std::vector<Font> fonts_;
 
-    [[nodiscard]] static Result<Context> create(const char *version) noexcept;
-    void inline destroy() noexcept { FT_Done_FreeType(ft_library_); };
+    [[nodiscard]] Result<void> init(const char *version) noexcept;
+    [[nodiscard]] Result<size_t> new_font(const char *path, const float scale = 4.0f,
+                                          const float range = 2.0f) noexcept;
+    Atlas new_atlas(const int texture_width, const int padding = 2) noexcept;
+    [[nodiscard]] Result<void> generate_ascii(Atlas &, Font &) noexcept;
+    [[nodiscard]] Result<void> generate_glyph(Atlas &, Font &,
+                                              const std::vector<int32_t> &codepoints) noexcept;
+    [[nodiscard]] Result<void> generate_glyph(Atlas &, Font &, int32_t codepoint) noexcept;
+    [[nodiscard]] Result<void> draw(Atlas &, Font &, Glyphs, const float *projection) noexcept;
+    [[nodiscard]] Result<Glyphs> print_unicode(Atlas &, Font &, const std::u32string_view buffer,
+                                               const float x, const float y, const long color,
+                                               const float size, const bool enable_kerning = true,
+                                               const bool print_vertically = false, const float offset = 0.0f,
+                                               const float skew = 0.0f,
+                                               const float strength = 0.50f) noexcept;
+
+    void destroy() noexcept;
 };
 
 void ortho(float left, float right, float bottom, float top, float nearVal, float farVal, float dest[][4]);

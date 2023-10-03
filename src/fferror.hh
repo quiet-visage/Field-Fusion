@@ -22,6 +22,7 @@ enum class Error {
     ExceededMaxTextureSize,
     OutOfGpuMemory,
     GlyphGenerationFail,
+    BadIndexMapAccess,
 };
 
 }  // namespace ff

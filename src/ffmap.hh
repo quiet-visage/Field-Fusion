@@ -1,8 +1,12 @@
 #pragma once
 #include <ft2build.h>
 
+#include <functional>
 #include <vector>
+
+#include "ffresult.hh"
 #include FT_FREETYPE_H
+#include <optional>
 
 namespace ff {
 constexpr const size_t kdynamic_map_initial_size = 0xff;
@@ -12,10 +16,10 @@ struct MapItem {
     float advance[2];
 };
 struct Map {
+    using ItemRef = std::reference_wrapper<MapItem>;
     std::vector<MapItem> dynamic_map_;
     Map() { dynamic_map_.reserve(kdynamic_map_initial_size); }
-    MapItem *get(FT_ULong codepoint);
-    MapItem *insert(FT_ULong codepoint);
-    inline bool in(FT_ULong codepoint) { return get(codepoint) != &*dynamic_map_.end(); }
+    std::optional<ItemRef> at(FT_ULong codepoint) noexcept;
+    ItemRef insert(const FT_ULong codepoint) noexcept;
 };
 }  // namespace ff

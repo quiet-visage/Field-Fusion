@@ -15,7 +15,6 @@ struct Result {
     }
 
     [[nodiscard]] inline operator bool() { return ok(); }
-    [[nodiscard]] inline T *operator->() { return &value(); }
     [[nodiscard]] inline operator T &() { return value(); }
 
    private:

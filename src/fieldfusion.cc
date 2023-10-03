@@ -2,6 +2,8 @@
 
 #include <GL/glew.h>
 
+#include <cassert>
+#include <cstdint>
 #include <memory>
 #include <numeric>
 
@@ -18,7 +20,6 @@ namespace internal {
 const extern GLfloat _MAT4_ZERO_INIT[4][4];
 
 bool compile_shader(const char *source, GLenum type, GLuint *shader, const char *version);
-Result<MapItem *> map_get_or_add(Context &ctx, Font &font, Atlas &atlas, int32_t codepoint);
 inline int is_control(int32_t code) { return (code <= 31) || (code >= 128 && code <= 159); };
 struct use_free {
     void operator()(void *x) { free(x); }
@@ -55,41 +56,39 @@ void ortho(float left, float right, float bottom, float top, float nearVal, floa
     dest[3][3] = 1.0f;
 }
 
-[[nodiscard]] Result<Context> Context::create(const char *version) noexcept {
-    Context result{};
-    FT_Error error = FT_Init_FreeType(&result.ft_library_);
-
+[[nodiscard]] Result<void> FieldFusion::init(const char *version) noexcept {
+    FT_Error error = FT_Init_FreeType(&ft_library_);
     if (error != 0) return Error::FtInitializationFail;
 
-    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &result.max_texture_size_);
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size_);
 
     unsigned vertex_shader, geometry_shader, fragment_shader;
     if (!internal::compile_shader(msdf_vertex, GL_VERTEX_SHADER, &vertex_shader, version))
         return Error::MsdfVertexShaderCompileFail;
     if (!internal::compile_shader(msdf_fragment, GL_FRAGMENT_SHADER, &fragment_shader, version))
         return Error::MsdfFragmentShaderCompileFail;
-    if (!(result.gen_shader_ = glCreateProgram())) return Error::ShaderLinkageFail;
+    if (!(gen_shader_ = glCreateProgram())) return Error::ShaderLinkageFail;
 
-    glAttachShader(result.gen_shader_, vertex_shader);
-    glAttachShader(result.gen_shader_, fragment_shader);
-    glLinkProgram(result.gen_shader_);
+    glAttachShader(gen_shader_, vertex_shader);
+    glAttachShader(gen_shader_, fragment_shader);
+    glLinkProgram(gen_shader_);
     glDeleteShader(vertex_shader);
     glDeleteShader(fragment_shader);
 
     int status;
-    glGetProgramiv(result.gen_shader_, GL_LINK_STATUS, &status);
+    glGetProgramiv(gen_shader_, GL_LINK_STATUS, &status);
     if (!status) return Error::ShaderLinkageFail;
 
-    result.uniforms_.atlas_projection = glGetUniformLocation(result.gen_shader_, "projection");
-    result.uniforms_.texture_offset = glGetUniformLocation(result.gen_shader_, "offset");
-    result.uniforms_.glyph_height = glGetUniformLocation(result.gen_shader_, "glyph_height");
-    result.uniforms_.translate = glGetUniformLocation(result.gen_shader_, "translate");
-    result.uniforms_.scale = glGetUniformLocation(result.gen_shader_, "scale");
-    result.uniforms_.range = glGetUniformLocation(result.gen_shader_, "range");
-    result.uniforms_.meta_offset = glGetUniformLocation(result.gen_shader_, "meta_offset");
-    result.uniforms_.point_offset = glGetUniformLocation(result.gen_shader_, "point_offset");
-    result.uniforms_.metadata = glGetUniformLocation(result.gen_shader_, "metadata");
-    result.uniforms_.point_data = glGetUniformLocation(result.gen_shader_, "point_data");
+    uniforms_.atlas_projection = glGetUniformLocation(gen_shader_, "projection");
+    uniforms_.texture_offset = glGetUniformLocation(gen_shader_, "offset");
+    uniforms_.glyph_height = glGetUniformLocation(gen_shader_, "glyph_height");
+    uniforms_.translate = glGetUniformLocation(gen_shader_, "translate");
+    uniforms_.scale = glGetUniformLocation(gen_shader_, "scale");
+    uniforms_.range = glGetUniformLocation(gen_shader_, "range");
+    uniforms_.meta_offset = glGetUniformLocation(gen_shader_, "meta_offset");
+    uniforms_.point_offset = glGetUniformLocation(gen_shader_, "point_offset");
+    uniforms_.metadata = glGetUniformLocation(gen_shader_, "metadata");
+    uniforms_.point_data = glGetUniformLocation(gen_shader_, "point_data");
 
     if (!internal::compile_shader(font_vertex, GL_VERTEX_SHADER, &vertex_shader, version))
         return Error::MsdfVertexShaderCompileFail;
@@ -97,71 +96,79 @@ void ortho(float left, float right, float bottom, float top, float nearVal, floa
         return Error::FontGeometryShaderCompileFail;
     if (!internal::compile_shader(font_fragment, GL_FRAGMENT_SHADER, &fragment_shader, version))
         return Error::FontFragmentShaderCompileFail;
-    if (!(result.render_shader_ = glCreateProgram())) return Error::ShaderLinkageFail;
+    if (!(render_shader_ = glCreateProgram())) return Error::ShaderLinkageFail;
 
-    glAttachShader(result.render_shader_, vertex_shader);
-    glAttachShader(result.render_shader_, geometry_shader);
-    glAttachShader(result.render_shader_, fragment_shader);
-    glLinkProgram(result.render_shader_);
+    glAttachShader(render_shader_, vertex_shader);
+    glAttachShader(render_shader_, geometry_shader);
+    glAttachShader(render_shader_, fragment_shader);
+    glLinkProgram(render_shader_);
     glDeleteShader(vertex_shader);
     glDeleteShader(geometry_shader);
     glDeleteShader(fragment_shader);
 
-    glGetProgramiv(result.render_shader_, GL_LINK_STATUS, &status);
+    glGetProgramiv(render_shader_, GL_LINK_STATUS, &status);
     if (!status) {
-        glDeleteProgram(result.gen_shader_);
+        glDeleteProgram(gen_shader_);
         return Error::ShaderLinkageFail;
     }
 
-    result.uniforms_.window_projection = glGetUniformLocation(result.render_shader_, "projection");
-    result.uniforms_.font_atlas_projection = glGetUniformLocation(result.render_shader_, "font_projection");
-    result.uniforms_.index = glGetUniformLocation(result.render_shader_, "font_index");
-    result.uniforms_.atlas = glGetUniformLocation(result.render_shader_, "font_atlas");
-    result.uniforms_.padding = glGetUniformLocation(result.render_shader_, "padding");
-    result.uniforms_.dpi = glGetUniformLocation(result.render_shader_, "dpi");
-    result.uniforms_.units_per_em = glGetUniformLocation(result.render_shader_, "units_per_em");
-    result.dpi_[0] = 72.0;
-    result.dpi_[1] = 72.0;
+    uniforms_.window_projection = glGetUniformLocation(render_shader_, "projection");
+    uniforms_.font_atlas_projection = glGetUniformLocation(render_shader_, "font_projection");
+    uniforms_.index = glGetUniformLocation(render_shader_, "font_index");
+    uniforms_.atlas = glGetUniformLocation(render_shader_, "font_atlas");
+    uniforms_.padding = glGetUniformLocation(render_shader_, "padding");
+    uniforms_.dpi = glGetUniformLocation(render_shader_, "dpi");
+    uniforms_.units_per_em = glGetUniformLocation(render_shader_, "units_per_em");
+    dpi_[0] = 72.0;
+    dpi_[1] = 72.0;
 
-    glGenVertexArrays(1, &result.bbox_vao_);
-    glGenBuffers(1, &result.bbox_vbo_);
-    glBindBuffer(GL_ARRAY_BUFFER, result.bbox_vbo_);
+    glGenVertexArrays(1, &bbox_vao_);
+    glGenBuffers(1, &bbox_vbo_);
+    glBindBuffer(GL_ARRAY_BUFFER, bbox_vbo_);
     glBufferData(GL_ARRAY_BUFFER, 12 * sizeof(float), 0, GL_STREAM_READ);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-    return result;
-}
-
-[[nodiscard]] Result<void> Font::init_face(const Context &ctx) noexcept {
-    if (FT_New_Face(ctx.ft_library_, font_path_, 0, &face_)) return Error::FtFaceInitializationFail;
-    FT_Select_Charmap(face_, ft_encoding_unicode);
-    vertical_advance_ = (float)(face_->ascender - face_->descender);
-    glGenBuffers(1, &meta_input_buffer_);
-    glGenBuffers(1, &point_input_buffer_);
-    glGenTextures(1, &meta_input_texture_);
-    glGenTextures(1, &point_input_texture_);
     return {};
 }
 
-void Font::init_textures() noexcept {
-    glGenBuffers(1, &meta_input_buffer_);
-    glGenBuffers(1, &point_input_buffer_);
-    glGenTextures(1, &meta_input_texture_);
-    glGenTextures(1, &point_input_texture_);
+[[nodiscard]] Result<size_t> FieldFusion::new_font(const char *path, const float scale,
+                                                   const float range) noexcept {
+    fonts_.push_back({path, scale, range});
+    size_t handle = fonts_.size() - 1;
+    auto &font = fonts_.at(handle);
+
+    if (FT_New_Face(ft_library_, path, 0, &font.face_)) return Error::FtFaceInitializationFail;
+    FT_Select_Charmap(font.face_, ft_encoding_unicode);
+    font.vertical_advance_ = (float)(font.face_->ascender - font.face_->descender);
+
+    glGenBuffers(1, &font.meta_input_buffer_);
+    glGenBuffers(1, &font.point_input_buffer_);
+    glGenTextures(1, &font.meta_input_texture_);
+    glGenTextures(1, &font.point_input_texture_);
+
+    return handle;
 }
 
-void Atlas::init_textures() noexcept {
-    glGenBuffers(1, &index_buffer_);
-    glGenTextures(1, &index_texture_);
-    glGenTextures(1, &atlas_texture_);
-    glGenFramebuffers(1, &atlas_framebuffer_);
+[[nodiscard]] Atlas FieldFusion::new_atlas(const int texture_width, const int padding) noexcept {
+    Atlas a(texture_width, padding);
+    glGenBuffers(1, &a.index_buffer_);
+    glGenTextures(1, &a.index_texture_);
+    glGenTextures(1, &a.atlas_texture_);
+    glGenFramebuffers(1, &a.atlas_framebuffer_);
+    return a;
 }
 
-Result<void> Font::generate_glyphs(const Context &ctx, Atlas &atlas,
-                                   const std::vector<int> &codepoint) noexcept {
+[[nodiscard]] Result<void> FieldFusion::generate_ascii(Atlas &a, Font &f) noexcept {
+    std::vector<int32_t> codepoints(0xff);
+    std::iota(codepoints.begin(), codepoints.end(), 0);
+    return generate_glyph(a, f, codepoints);
+}
+
+[[nodiscard]] Result<void> FieldFusion::generate_glyph(Atlas &a, Font &f,
+                                                       const std::vector<int32_t> &codepoints) noexcept {
     GLint original_viewport[4];
     glGetIntegerv(GL_VIEWPORT, original_viewport);
-    int nrender = codepoint.size();
+    int nrender = codepoints.size();
 
     if (nrender <= 0) return {};
 
@@ -170,16 +177,16 @@ Result<void> Font::generate_glyphs(const Context &ctx, Atlas &atlas,
     std::unique_ptr<size_t[]> point_sizes(new size_t[nrender]());
 
     /* We will start with a square texture. */
-    int new_texture_height = atlas.texture_height_ ? atlas.texture_height_ : 1;
-    int new_index_size = atlas.nallocated_ ? atlas.nallocated_ : 1;
+    int new_texture_height = a.texture_height_ ? a.texture_height_ : 1;
+    int new_index_size = a.nallocated_ ? a.nallocated_ : 1;
 
     /* Amount of new memory needed for the index. */
     std::unique_ptr<IndexEntry[]> atlas_index(new IndexEntry[nrender]());
 
     size_t meta_size_sum = 0, point_size_sum = 0;
     for (size_t i = 0; (int)i < (int)nrender; ++i) {  // MARK
-        int code = codepoint[i];
-        auto res = glyph_buffer_size(face_, code, &meta_sizes[i], &point_sizes[i]);
+        int code = codepoints[i];
+        auto res = glyph_buffer_size(f.face_, code, &meta_sizes[i], &point_sizes[i]);
         if (not res) return res.error_;
 
         meta_size_sum += meta_sizes[i];
@@ -196,60 +203,59 @@ Result<void> Font::generate_glyphs(const Context &ctx, Atlas &atlas,
     for (size_t i = 0; (int)i < (int)nrender; ++i) {
         float buffer_width, buffer_height;
 
-        int code = codepoint[i];
-        auto res = serialize_glyph(face_, code, meta_ptr, (GLfloat *)point_ptr);
+        int code = codepoints[i];
+        auto res = serialize_glyph(f.face_, code, meta_ptr, (GLfloat *)point_ptr);
         if (not res) return res.error_;
 
-        MapItem *m = character_index_.insert(code);
-        m->advance[0] = (float)face_->glyph->metrics.horiAdvance;
-        m->advance[1] = (float)face_->glyph->metrics.vertAdvance;
+        auto m = f.character_index_.insert(code);
+        m.get().advance[0] = (float)f.face_->glyph->metrics.horiAdvance;
+        m.get().advance[1] = (float)f.face_->glyph->metrics.vertAdvance;
 
-        buffer_width = face_->glyph->metrics.width / kserializer_scale + range_;
-        buffer_height = face_->glyph->metrics.height / kserializer_scale + range_;
-        buffer_width *= scale_;
-        buffer_height *= scale_;
+        buffer_width = f.face_->glyph->metrics.width / kserializer_scale + f.range_;
+        buffer_height = f.face_->glyph->metrics.height / kserializer_scale + f.range_;
+        buffer_width *= f.scale_;
+        buffer_height *= f.scale_;
 
         meta_ptr += meta_sizes[i];
         point_ptr += point_sizes[i];
 
-        if (atlas.offset_x_ + buffer_width > atlas.texture_width_) {
-            atlas.offset_y_ += (atlas.y_increment_ + atlas.padding_);
-            atlas.offset_x_ = 1;
-            atlas.y_increment_ = 0;
+        if (a.offset_x_ + buffer_width > a.texture_width_) {
+            a.offset_y_ += (a.y_increment_ + a.padding_);
+            a.offset_x_ = 1;
+            a.y_increment_ = 0;
         }
-        atlas.y_increment_ =
-            (size_t)buffer_height > atlas.y_increment_ ? (size_t)buffer_height : atlas.y_increment_;
+        a.y_increment_ = (size_t)buffer_height > a.y_increment_ ? (size_t)buffer_height : a.y_increment_;
 
-        atlas_index[i].offset_x = atlas.offset_x_;
-        atlas_index[i].offset_y = atlas.offset_y_;
+        atlas_index[i].offset_x = a.offset_x_;
+        atlas_index[i].offset_y = a.offset_y_;
         atlas_index[i].size_x = buffer_width;
         atlas_index[i].size_y = buffer_height;
-        atlas_index[i].bearing_x = face_->glyph->metrics.horiBearingX;
-        atlas_index[i].bearing_y = face_->glyph->metrics.horiBearingY;
-        atlas_index[i].glyph_width = face_->glyph->metrics.width;
-        atlas_index[i].glyph_height = face_->glyph->metrics.height;
+        atlas_index[i].bearing_x = f.face_->glyph->metrics.horiBearingX;
+        atlas_index[i].bearing_y = f.face_->glyph->metrics.horiBearingY;
+        atlas_index[i].glyph_width = f.face_->glyph->metrics.width;
+        atlas_index[i].glyph_height = f.face_->glyph->metrics.height;
 
-        atlas.offset_x_ += (size_t)buffer_width + atlas.padding_;
+        a.offset_x_ += (size_t)buffer_width + a.padding_;
 
-        while ((atlas.offset_y_ + buffer_height) > new_texture_height) {
+        while ((a.offset_y_ + buffer_height) > new_texture_height) {
             new_texture_height *= 2;
         }
-        if (new_texture_height > ctx.max_texture_size_) return Error::ExceededMaxTextureSize;
+        if (new_texture_height > max_texture_size_) return Error::ExceededMaxTextureSize;
 
-        while ((int)(atlas.nglyphs_ + i) >= new_index_size) {
+        while ((int)(a.nglyphs_ + i) >= new_index_size) {
             new_index_size *= 2;
         }
     }
 
     /* Allocate and fill the buffers on GPU. */
-    glBindBuffer(GL_ARRAY_BUFFER, meta_input_buffer_);
+    glBindBuffer(GL_ARRAY_BUFFER, f.meta_input_buffer_);
     glBufferData(GL_ARRAY_BUFFER, meta_size_sum, metadata.get(), GL_DYNAMIC_READ);
 
-    glBindBuffer(GL_ARRAY_BUFFER, point_input_buffer_);
+    glBindBuffer(GL_ARRAY_BUFFER, f.point_input_buffer_);
     glBufferData(GL_ARRAY_BUFFER, point_size_sum, point_data.get(), GL_DYNAMIC_READ);
 
-    if ((int)atlas.nallocated_ == new_index_size) {
-        glBindBuffer(GL_ARRAY_BUFFER, atlas.index_buffer_);
+    if ((int)a.nallocated_ == new_index_size) {
+        glBindBuffer(GL_ARRAY_BUFFER, a.index_buffer_);
     } else {
         GLuint new_buffer;
         glGenBuffers(1, &new_buffer);
@@ -260,45 +266,44 @@ Result<void> Font::generate_glyphs(const Context &ctx, Atlas &atlas,
             glBindBuffer(GL_ARRAY_BUFFER, 0);
             return Error::OutOfGpuMemory;
         }
-        if (atlas.nglyphs_) {
-            glBindBuffer(GL_COPY_READ_BUFFER, atlas.index_buffer_);
-            glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_ARRAY_BUFFER, 0, 0,
-                                atlas.nglyphs_ * sizeof(IndexEntry));
+        if (a.nglyphs_) {
+            glBindBuffer(GL_COPY_READ_BUFFER, a.index_buffer_);
+            glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_ARRAY_BUFFER, 0, 0, a.nglyphs_ * sizeof(IndexEntry));
             glBindBuffer(GL_COPY_READ_BUFFER, 0);
         }
-        atlas.nallocated_ = new_index_size;
-        glDeleteBuffers(1, &atlas.index_buffer_);
-        atlas.index_buffer_ = new_buffer;
+        a.nallocated_ = new_index_size;
+        glDeleteBuffers(1, &a.index_buffer_);
+        a.index_buffer_ = new_buffer;
     }
     const size_t index_size = nrender * sizeof(IndexEntry);
-    glBufferSubData(GL_ARRAY_BUFFER, sizeof(IndexEntry) * atlas.nglyphs_, index_size, atlas_index.get());
+    glBufferSubData(GL_ARRAY_BUFFER, sizeof(IndexEntry) * a.nglyphs_, index_size, atlas_index.get());
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     /* Link sampler textures to the buffers. */
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_BUFFER, meta_input_texture_);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_R8UI, meta_input_buffer_);
+    glBindTexture(GL_TEXTURE_BUFFER, f.meta_input_texture_);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_R8UI, f.meta_input_buffer_);
     glBindTexture(GL_TEXTURE_BUFFER, 0);
 
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_BUFFER, point_input_texture_);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, point_input_buffer_);
+    glBindTexture(GL_TEXTURE_BUFFER, f.point_input_texture_);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, f.point_input_buffer_);
     glBindTexture(GL_TEXTURE_BUFFER, 0);
 
     glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_BUFFER, atlas.index_texture_);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, atlas.index_buffer_);
+    glBindTexture(GL_TEXTURE_BUFFER, a.index_texture_);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, a.index_buffer_);
     glBindTexture(GL_TEXTURE_BUFFER, 0);
 
     glActiveTexture(GL_TEXTURE0);
 
     /* Generate the atlas texture and bind it as the framebuffer. */
-    if (atlas.texture_height_ == new_texture_height) {
+    if (a.texture_height_ == new_texture_height) {
         /* No need to extend the texture. */
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, atlas.atlas_framebuffer_);
-        glBindTexture(GL_TEXTURE_2D, atlas.atlas_texture_);
-        glViewport(0, 0, atlas.texture_width_, atlas.texture_height_);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, a.atlas_framebuffer_);
+        glBindTexture(GL_TEXTURE_2D, a.atlas_texture_);
+        glViewport(0, 0, a.texture_width_, a.texture_height_);
     } else {
         GLuint new_texture;
         GLuint new_framebuffer;
@@ -310,8 +315,8 @@ Result<void> Font::generate_glyphs(const Context &ctx, Atlas &atlas,
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, atlas.texture_width_, new_texture_height, 0, GL_RGBA,
-                     GL_FLOAT, NULL);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, a.texture_width_, new_texture_height, 0, GL_RGBA, GL_FLOAT,
+                     NULL);
 
         if (glGetError() == GL_OUT_OF_MEMORY) {
             /* Buffer size too big, are you trying to type Klingon? */
@@ -322,55 +327,54 @@ Result<void> Font::generate_glyphs(const Context &ctx, Atlas &atlas,
         }
 
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, new_texture, 0);
-        glViewport(0, 0, atlas.texture_width_, new_texture_height);
+        glViewport(0, 0, a.texture_width_, new_texture_height);
         glClearColor(0.0, 0.0, 0.0, 1.0);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        if (atlas.texture_height_) {
+        if (a.texture_height_) {
             /* Old texture had data -> copy. */
-            glBindFramebuffer(GL_READ_FRAMEBUFFER, atlas.atlas_framebuffer_);
-            glBlitFramebuffer(0, 0, atlas.texture_width_, atlas.texture_height_, 0, 0, atlas.texture_width_,
-                              atlas.texture_height_, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, a.atlas_framebuffer_);
+            glBlitFramebuffer(0, 0, a.texture_width_, a.texture_height_, 0, 0, a.texture_width_,
+                              a.texture_height_, GL_COLOR_BUFFER_BIT, GL_NEAREST);
             glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
         }
 
         glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-        atlas.texture_height_ = new_texture_height;
-        glDeleteTextures(1, &atlas.atlas_texture_);
-        atlas.atlas_texture_ = new_texture;
-        glDeleteFramebuffers(1, &atlas.atlas_framebuffer_);
-        atlas.atlas_framebuffer_ = new_framebuffer;
+        a.texture_height_ = new_texture_height;
+        glDeleteTextures(1, &a.atlas_texture_);
+        a.atlas_texture_ = new_texture;
+        glDeleteFramebuffers(1, &a.atlas_framebuffer_);
+        a.atlas_framebuffer_ = new_framebuffer;
     }
     glBindTexture(GL_TEXTURE_2D, 0);
 
     GLfloat framebuffer_projection[4][4];
-    ortho(0, (GLfloat)atlas.texture_width_, 0, (GLfloat)atlas.texture_height_, -1.0, 1.0,
-          framebuffer_projection);
-    ortho(-(GLfloat)atlas.texture_width_, (GLfloat)atlas.texture_width_, -(GLfloat)atlas.texture_height_,
-          (GLfloat)atlas.texture_height_, -1.0, 1.0, atlas.projection_);
+    ortho(0, (GLfloat)a.texture_width_, 0, (GLfloat)a.texture_height_, -1.0, 1.0, framebuffer_projection);
+    ortho(-(GLfloat)a.texture_width_, (GLfloat)a.texture_width_, -(GLfloat)a.texture_height_,
+          (GLfloat)a.texture_height_, -1.0, 1.0, a.projection_);
 
-    glUseProgram(ctx.gen_shader_);
-    glUniform1i(ctx.uniforms_.metadata, 0);
-    glUniform1i(ctx.uniforms_.point_data, 1);
+    glUseProgram(gen_shader_);
+    glUniform1i(uniforms_.metadata, 0);
+    glUniform1i(uniforms_.point_data, 1);
 
-    glUniformMatrix4fv(ctx.uniforms_.atlas_projection, 1, GL_FALSE, (GLfloat *)framebuffer_projection);
+    glUniformMatrix4fv(uniforms_.atlas_projection, 1, GL_FALSE, (GLfloat *)framebuffer_projection);
 
-    glUniform2f(ctx.uniforms_.scale, scale_, scale_);
-    glUniform1f(ctx.uniforms_.range, range_);
-    glUniform1i(ctx.uniforms_.meta_offset, 0);
-    glUniform1i(ctx.uniforms_.point_offset, 0);
+    glUniform2f(uniforms_.scale, f.scale_, f.scale_);
+    glUniform1f(uniforms_.range, f.range_);
+    glUniform1i(uniforms_.meta_offset, 0);
+    glUniform1i(uniforms_.point_offset, 0);
 
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         fprintf(stderr, "msdfgl: framebuffer incomplete: %x\n", glCheckFramebufferStatus(GL_FRAMEBUFFER));
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_BUFFER, meta_input_texture_);
+    glBindTexture(GL_TEXTURE_BUFFER, f.meta_input_texture_);
 
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_BUFFER, point_input_texture_);
+    glBindTexture(GL_TEXTURE_BUFFER, f.point_input_texture_);
 
-    glBindVertexArray(ctx.bbox_vao_);
-    glBindBuffer(GL_ARRAY_BUFFER, ctx.bbox_vbo_);
+    glBindVertexArray(bbox_vao_);
+    glBindBuffer(GL_ARRAY_BUFFER, bbox_vbo_);
 
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(GLfloat), 0);
     glEnableVertexAttribArray(0);
@@ -384,13 +388,13 @@ Result<void> Font::generate_glyphs(const Context &ctx, Atlas &atlas,
         GLfloat bounding_box[] = {0, 0, w, 0, 0, h, 0, h, w, 0, w, h};
         glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(bounding_box), bounding_box);
 
-        glUniform2f(ctx.uniforms_.translate, -g.bearing_x / kserializer_scale + range_ / 2.0f,
-                    (g.glyph_height - g.bearing_y) / kserializer_scale + range_ / 2.0f);
+        glUniform2f(uniforms_.translate, -g.bearing_x / kserializer_scale + f.range_ / 2.0f,
+                    (g.glyph_height - g.bearing_y) / kserializer_scale + f.range_ / 2.0f);
 
-        glUniform2f(ctx.uniforms_.texture_offset, g.offset_x, g.offset_y);
-        glUniform1i(ctx.uniforms_.meta_offset, meta_offset);
-        glUniform1i(ctx.uniforms_.point_offset, point_offset / (2 * sizeof(GLfloat)));
-        glUniform1f(ctx.uniforms_.glyph_height, g.size_y);
+        glUniform2f(uniforms_.texture_offset, g.offset_x, g.offset_y);
+        glUniform1i(uniforms_.meta_offset, meta_offset);
+        glUniform1i(uniforms_.point_offset, point_offset / (2 * sizeof(GLfloat)));
+        glUniform1f(uniforms_.glyph_height, g.size_y);
 
         /* No need for draw call if there are no contours */
         if (((unsigned char *)metadata.get())[meta_offset]) glDrawArrays(GL_TRIANGLES, 0, 6);
@@ -411,24 +415,24 @@ Result<void> Font::generate_glyphs(const Context &ctx, Atlas &atlas,
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    atlas.nglyphs_ += nrender;
+    a.nglyphs_ += nrender;
 
     glViewport(original_viewport[0], original_viewport[1], original_viewport[2], original_viewport[3]);
 
     return {};
 }
 
-Result<void> Font::generate_ascii(const Context &ctx, Atlas &atlas) noexcept {
-    std::vector<int> codepoint(0xff);
-    std::iota(codepoint.begin(), codepoint.end(), 0);
-    return generate_glyphs(ctx, atlas, codepoint);
+[[nodiscard]] Result<void> FieldFusion::generate_glyph(Atlas &a, Font &f, int32_t codepoint) noexcept {
+    auto v = std::vector<int32_t>{codepoint};
+    return generate_glyph(a, f, v);
 }
 
-void Font::draw(const Context &ctx, Atlas &atlas, std::vector<Glyph> glyphs,
-                const float *projection) noexcept {
+[[nodiscard]] Result<void> FieldFusion::draw(Atlas &a, Font &f, Glyphs glyphs,
+                                             const float *projection) noexcept {
     for (int i = 0; i < glyphs.size(); ++i) {
-        MapItem *e = character_index_.get(glyphs.at(i).codepoint);
-        glyphs.at(i).codepoint = e->codepoint_index;
+        auto e = f.character_index_.at(glyphs.at(i).codepoint);
+        if (not e) return Error::GlyphGenerationFail;
+        glyphs.at(i).codepoint = e.value().get().codepoint_index;
     }
 
     GLuint glyph_buffer;
@@ -460,23 +464,23 @@ void Font::draw(const Context &ctx, Atlas &atlas, std::vector<Glyph> glyphs,
     glEnableVertexAttribArray(6);
     glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, sizeof(Glyph), (void *)offsetof(Glyph, strength));
 
-    glUseProgram(ctx.render_shader_);
+    glUseProgram(render_shader_);
 
     /* Bind atlas texture and index buffer. */
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, atlas.atlas_texture_);
-    glUniform1i(ctx.uniforms_.atlas, 0);
+    glBindTexture(GL_TEXTURE_2D, a.atlas_texture_);
+    glUniform1i(uniforms_.atlas, 0);
 
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_BUFFER, atlas.index_texture_);
-    glUniform1i(ctx.uniforms_.index, 1);
+    glBindTexture(GL_TEXTURE_BUFFER, a.index_texture_);
+    glUniform1i(uniforms_.index, 1);
 
-    glUniformMatrix4fv(ctx.uniforms_.font_atlas_projection, 1, GL_FALSE, (GLfloat *)atlas.projection_);
+    glUniformMatrix4fv(uniforms_.font_atlas_projection, 1, GL_FALSE, (GLfloat *)a.projection_);
 
-    glUniformMatrix4fv(ctx.uniforms_.window_projection, 1, GL_FALSE, projection);
-    glUniform1f(ctx.uniforms_.padding, (GLfloat)(range_ / 2.0 * kserializer_scale));
-    glUniform1f(ctx.uniforms_.units_per_em, (GLfloat)face_->units_per_EM);
-    glUniform2fv(ctx.uniforms_.dpi, 1, ctx.dpi_);
+    glUniformMatrix4fv(uniforms_.window_projection, 1, GL_FALSE, projection);
+    glUniform1f(uniforms_.padding, (GLfloat)(f.range_ / 2.0 * kserializer_scale));
+    glUniform1f(uniforms_.units_per_em, (GLfloat)f.face_->units_per_EM);
+    glUniform2fv(uniforms_.dpi, 1, dpi_);
 
     /* Render the glyphs. */
     glDrawArrays(GL_POINTS, 0, glyphs.size());
@@ -502,78 +506,60 @@ void Font::draw(const Context &ctx, Atlas &atlas, std::vector<Glyph> glyphs,
     glBindVertexArray(0);
     glDeleteBuffers(1, &glyph_buffer);
     glDeleteVertexArrays(1, &vao);
+    return {};
 }
 
-[[nodiscard]] Result<Glyphs> Font::print_unicode(Context &ctx, Atlas &atlas,
-                                                 const std::u32string_view unicode_string, const float x,
-                                                 const float y, const long color, const float size,
-                                                 const bool enable_kerning, const float offset,
-                                                 const float skew, const float strength) noexcept {
+[[nodiscard]] Result<Glyphs> FieldFusion::print_unicode(Atlas &a, Font &f, const std::u32string_view buffer,
+                                                        const float x, const float y, const long color,
+                                                        const float size, const bool enable_kerning,
+                                                        const bool print_vertically, const float offset,
+                                                        const float skew, const float strength) noexcept {
     std::vector<Glyph> result;
     float x0 = x;
-    for (size_t i = 0; i < unicode_string.size(); i++) {
-        const auto &character = unicode_string.at(i);
+    float y0 = y;
+    for (size_t i = 0; i < buffer.size(); i++) {
+        const auto &codepoint = (int32_t)buffer.at(i);
         result.push_back({});
         auto &element = result.at(result.size() - 1);
         element.x = x0;
-        element.y = y;
+        element.y = y0;
         element.color = color;
-        element.codepoint = unicode_string.at(i);
+        element.codepoint = codepoint;
         element.size = size;
         element.offset = offset;
         element.skew = skew;
         element.strength = strength;
 
-        auto idx = internal::map_get_or_add(ctx, *this, atlas, character);
-        if (not idx) return idx.error_;
-
-        FT_Vector kerning{0};
-        const bool should_get_kerning = enable_kerning and FT_HAS_KERNING(face_) and (i > 0);
-        if (should_get_kerning) {
-            const auto &previous_character = unicode_string.at(i - 1);
-            FT_Get_Kerning(face_, FT_Get_Char_Index(face_, previous_character),
-                           FT_Get_Char_Index(face_, character), FT_KERNING_UNSCALED, &kerning);
+        auto idx = f.character_index_.at(codepoint);
+        if (not idx.has_value()) {
+            auto gen_status = generate_glyph(a, f, std::vector<int32_t>{codepoint});
+            if (not gen_status) return gen_status.error_;
+            idx = f.character_index_.at(codepoint);
+            assert(idx.has_value());
         }
 
-        x0 += (idx.value()->advance[0] + kerning.x) * (size * ctx.dpi_[0] / 72.0f) / face_->units_per_EM;
+        FT_Vector kerning{0};
+        const bool should_get_kerning = enable_kerning and FT_HAS_KERNING(f.face_) and (i > 0);
+        if (should_get_kerning) {
+            const auto &previous_character = buffer.at(i - 1);
+            FT_Get_Kerning(f.face_, FT_Get_Char_Index(f.face_, previous_character),
+                           FT_Get_Char_Index(f.face_, codepoint), FT_KERNING_UNSCALED, &kerning);
+        }
+
+        if (not print_vertically)
+            x0 +=
+                (idx.value().get().advance[0] + kerning.x) * (size * dpi_[0] / 72.0f) / f.face_->units_per_EM;
+        else
+            y0 +=
+                (idx.value().get().advance[1] + kerning.y) * (size * dpi_[0] / 72.0f) / f.face_->units_per_EM;
     }
     return result;
 }
-[[nodiscard]] Result<Glyphs> Font::print_unicode_vertically(Context &ctx, Atlas &atlas,
-                                                            const std::u32string_view unicode_string,
-                                                            const float x, const float y, const long color,
-                                                            const float size, const bool enable_kerning,
-                                                            const float offset, const float skew,
-                                                            const float strength) noexcept {
-    std::vector<Glyph> result;
-    float y0 = y;
-    for (size_t i = 0; i < unicode_string.size(); i++) {
-        const auto &character = unicode_string.at(i);
-        result.push_back({});
-        auto &element = result.at(result.size() - 1);
-        element.x = x;
-        element.y = y0;
-        element.color = color;
-        element.codepoint = unicode_string.at(i);
-        element.size = size;
-        element.offset = offset;
-        element.skew = skew;
-        element.strength = strength;
-
-        auto idx = internal::map_get_or_add(ctx, *this, atlas, character);
-        if (not idx) return idx.error_;
-
-        FT_Vector kerning{0};
-        const bool should_get_kerning = enable_kerning and FT_HAS_KERNING(face_) and (i > 0);
-        if (should_get_kerning) {
-            const auto &previous_character = unicode_string.at(i - 1);
-            FT_Get_Kerning(face_, FT_Get_Char_Index(face_, previous_character),
-                           FT_Get_Char_Index(face_, character), FT_KERNING_UNSCALED, &kerning);
-        }
-
-        y0 += (idx.value()->advance[1] + kerning.y) * (size * ctx.dpi_[1] / 72.0f) / face_->units_per_EM;
+void FieldFusion::destroy() noexcept {
+    for (auto &font : fonts_) {
+        font.destroy();
     }
-    return result;
+    FT_Done_FreeType(ft_library_);
 }
 }  // namespace ff
 
@@ -605,16 +591,5 @@ bool compile_shader(const char *source, GLenum type, GLuint *shader, const char 
     }
 
     return true;
-}
-
-Result<MapItem *> map_get_or_add(Context &ctx, Font &font, Atlas &atlas, int32_t codepoint) {
-    auto ret = font.character_index_.get(codepoint);
-    if (not font.character_index_.in(codepoint)) {
-        auto result = font.generate_glyphs(ctx, atlas, {codepoint});
-        if (not result) return result.error_;
-        ret = font.character_index_.get(codepoint);
-        if (ret == nullptr) return Error::GlyphGenerationFail;
-    }
-    return ret;
 }
 }  // namespace ff::internal
