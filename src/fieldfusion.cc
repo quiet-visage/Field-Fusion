@@ -131,7 +131,7 @@ void ortho(float left, float right, float bottom, float top, float nearVal, floa
     return {};
 }
 
-[[nodiscard]] Result<size_t> FieldFusion::new_font(const char *path, const float scale,
+[[nodiscard]] Result<size_t> FieldFusion::new_font(Atlas &a, const char *path, const float scale,
                                                    const float range) noexcept {
     fonts_.push_back({path, scale, range});
     size_t handle = fonts_.size() - 1;
@@ -145,6 +145,11 @@ void ortho(float left, float right, float bottom, float top, float nearVal, floa
     glGenBuffers(1, &font.point_input_buffer_);
     glGenTextures(1, &font.meta_input_texture_);
     glGenTextures(1, &font.point_input_texture_);
+
+    auto success = generate_ascii(a, font);
+    if (not success) {
+        return success.error_;
+    }
 
     return handle;
 }
@@ -429,6 +434,7 @@ void ortho(float left, float right, float bottom, float top, float nearVal, floa
 
 [[nodiscard]] Result<void> FieldFusion::draw(Atlas &a, Font &f, Glyphs glyphs,
                                              const float *projection) noexcept {
+#pragma omp parallel for
     for (int i = 0; i < glyphs.size(); ++i) {
         auto e = f.character_index_.at(glyphs.at(i).codepoint);
         if (not e) return Error::GlyphGenerationFail;

@@ -13,7 +13,6 @@
 #include "ffmap.hh"
 
 namespace ff {
-
 struct Glyph {
     /**
      * X and Y coordinates in in the projection coordinates.
@@ -79,6 +78,7 @@ struct FieldFusion {
         int metadata;
         int point_data;
     };
+
     FT_Library ft_library_;
     float dpi_[2];
     uint gen_shader_;
@@ -90,7 +90,7 @@ struct FieldFusion {
     std::vector<Font> fonts_;
 
     [[nodiscard]] Result<void> init(const char *version) noexcept;
-    [[nodiscard]] Result<size_t> new_font(const char *path, const float scale = 4.0f,
+    [[nodiscard]] Result<size_t> new_font(Atlas &, const char *path, const float scale = 4.0f,
                                           const float range = 2.0f) noexcept;
     Atlas new_atlas(const int texture_width, const int padding = 2) noexcept;
     [[nodiscard]] Result<void> generate_ascii(Atlas &, Font &) noexcept;
@@ -104,7 +104,6 @@ struct FieldFusion {
                                                const bool print_vertically = false, const float offset = 0.0f,
                                                const float skew = 0.0f,
                                                const float strength = 0.50f) noexcept;
-
     void destroy() noexcept;
 };
 

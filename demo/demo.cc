@@ -73,62 +73,36 @@ int main() {
     auto freeglctx = defer(destroy_gl_ctx());
 
     auto fusion = ff::FieldFusion();
-    auto result = fusion.init("330");
-    if (not result) {
-        std::cerr << "failed to initialize Field Fusion, error code : " << (int)result.error_ << std::endl;
+    auto stat = fusion.init("330");
+    if (not stat) {
+        std::cerr << "failed to initialize field fusion" << std::endl;
         return 1;
     }
     auto freefusion = defer(fusion.destroy());
-
-    auto fnt_handle = fusion.new_font(kfont_path);
-    if (not fnt_handle) {
-        std::cerr << "failed to initialize font " << kfont_path << ", error code : " << (int)result.error_
-                  << std::endl;
-        return 1;
-    }
+    auto atlas = fusion.new_atlas(kwindow_width);
+    auto fnt_handle = fusion.new_font(atlas, kfont_path).value();
     auto &fnt = fusion.fonts_.at(fnt_handle);
-    ff::Atlas atlas = fusion.new_atlas(kwindow_width);
-    {
-        auto genasci = fusion.generate_ascii(atlas, fnt);
-        if (not genasci) {
-            std::cerr << "failed to generate glyphs" << std::endl;
-            return 1;
-        }
-    }
 
     ff::Glyphs glyphs;
     glyphs.reserve(0xff);
     float y0 = kinitial_font_size;
     int size0 = kinitial_font_size;
     for (size_t i = 0; i < kline_repeat - 1; i++) {
-        auto line = fusion.print_unicode(atlas, fnt, ktext, 200, y0, kwhite, size0);
+        auto line = fusion.print_unicode(atlas, fnt, ktext, 200, y0, kwhite, size0).value();
 
-        if (not line) {
-            std::cerr << "field fusion error occurred. code: " << (int)line.error_ << std::endl;
-            return 1;
-        }
-
-        glyphs.insert(glyphs.end(), line.value().begin(), line.value().end());
+        glyphs.insert(glyphs.end(), line.begin(), line.end());
         size0 += kfont_size_increment;
         y0 += size0 + kline_padding;
     }
 
     y0 += size0 + kline_padding;
     size0 -= kfont_size_increment * 2;
-    auto unicode_line = fusion.print_unicode(atlas, fnt, kunicode_text, 200, y0, kwhite, size0);
-    if (not unicode_line) {
-        std::cerr << "field fusion error occurred. code: " << (int)unicode_line.error_ << std::endl;
-        return 1;
-    }
-    glyphs.insert(glyphs.end(), unicode_line.value().begin(), unicode_line.value().end());
+    auto unicode_line = fusion.print_unicode(atlas, fnt, kunicode_text, 200, y0, kwhite, size0).value();
+    glyphs.insert(glyphs.end(), unicode_line.begin(), unicode_line.end());
 
     auto vertical_line =
-        fusion.print_unicode(atlas, fnt, U"Field Fusion", 100, 0 + size0, 0xffffffff, 20.0f, 1, 1);
-    if (not vertical_line) {
-        std::cerr << "field fusion error occurred. code: " << (int)unicode_line.error_ << std::endl;
-        return 1;
-    }
-    glyphs.insert(glyphs.end(), vertical_line.value().begin(), vertical_line.value().end());
+        fusion.print_unicode(atlas, fnt, U"Field Fusion", 100, 0 + size0, 0xffffffff, 20.0f, 1, 1).value();
+    glyphs.insert(glyphs.end(), vertical_line.begin(), vertical_line.end());
 
     float projection[4][4];
     ff::ortho(0, kwindow_width, kwindow_height, 0, -1.0f, 1.0f, projection);
@@ -137,10 +111,7 @@ int main() {
 
     for (; not glfwWindowShouldClose(window);) {
         glClear(GL_COLOR_BUFFER_BIT);
-        {
-            auto result = fusion.draw(atlas, fnt, glyphs, (float *)projection);
-            if (not result) std::cerr << "failed to draw glyphs" << std::endl;
-        }
+        { (void)fusion.draw(atlas, fnt, glyphs, (float *)projection); }
         glUseProgram(shader_program);
         glBindTexture(GL_TEXTURE_2D, atlas.atlas_texture_);
         glBegin(GL_QUADS);
