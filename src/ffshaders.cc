@@ -1,7 +1,7 @@
 #include "ffshaders.hh"
 
 namespace ff {
-const char *font_fragment = R"SHADER(
+const char *kfont_fragment = R"SHADER(
 precision highp float;
 in vec2 text_pos;
 in vec4 text_color;
@@ -39,7 +39,7 @@ void main() {
     color.b = srgb_from_linear(color.z); 
 })SHADER";
 
-const char *font_geometry = R"SHADER(
+const char *kfont_geometry = R"SHADER(
 layout (points) in;
 layout (triangle_strip, max_vertices = 4) out;
 
@@ -124,7 +124,7 @@ void main() {
    
 )SHADER";
 
-const char *msdf_vertex = R"SHADER(
+const char *kmsdf_vertex = R"SHADER(
 layout (location = 0) in vec2 vertex;
 
 precision mediump float;
@@ -136,7 +136,7 @@ void main() {
 }
 )SHADER";
 
-const char *font_vertex = R"SHADER(
+const char *kfont_vertex = R"SHADER(
 layout (location = 0) in vec2 vertex;
 layout (location = 1) in uvec4 glyph_color;
 layout (location = 2) in int glyph_index;
@@ -170,7 +170,7 @@ void main() {
 }
 )SHADER";
 
-const char *msdf_fragment = R"SHADER(
+const char *kmsdf_fragment = R"SHADER(
 #define IDX_CURR 0
 #define IDX_SHAPE 1
 #define IDX_INNER 2

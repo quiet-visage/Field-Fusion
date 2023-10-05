@@ -21,22 +21,8 @@ static const std::u32string kunicode_text = U"Быстрая бурая лиса
 constexpr const char *kwin_title = "msdf demo";
 constexpr const char *kfont_path{"/usr/share/fonts/TTF/JetBrainsMonoNerdFontMono-Regular.ttf"};
 
-template <typename Lambda>
-struct ScopeGuard {
-    Lambda _callback;
-    [[nodiscard("callback gets called immediatly if dicarded")]] explicit ScopeGuard(Lambda callback)
-        : _callback(std::move(callback)) {}
-    ScopeGuard(const ScopeGuard &) = delete;
-    ScopeGuard(ScopeGuard &&) = delete;
-    ScopeGuard &operator=(const ScopeGuard &) = delete;
-    ScopeGuard &operator=(ScopeGuard &&) = delete;
-    ~ScopeGuard() { _callback(); };
-};
-
-#define defer(code) ScopeGuard([&]() { code; })
-
 static GLFWwindow *window;
-void init_gl_ctx() {
+void InitGlCtx() {
     assert(glfwInit() == GLFW_TRUE);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
     window = glfwCreateWindow(kwindow_width, kwindow_height, kwin_title, 0, 0);
@@ -47,15 +33,13 @@ void init_gl_ctx() {
     glClearColor(0.25f, 0.25f, 0.25f, 1.0f);
 }
 
-void destroy_gl_ctx() { glfwTerminate(); }
+void DestroyGlCtx() { glfwTerminate(); }
 
-int get_shader_program() {
+int GetShaderProgram() {
     auto shader_program = glCreateProgram();
 
     auto vshader = glCreateShader(GL_VERTEX_SHADER);
     auto fshader = glCreateShader(GL_FRAGMENT_SHADER);
-    auto freevshader = defer(glDeleteShader(vshader));
-    auto freefshader = defer(glDeleteShader(fshader));
 
     glShaderSource(vshader, 1, &kvertex_shader_src, 0);
     glShaderSource(fshader, 1, &kfragment_shader_src, 0);
@@ -65,22 +49,22 @@ int get_shader_program() {
     glAttachShader(shader_program, fshader);
     glLinkProgram(shader_program);
 
+    glDeleteShader(vshader);
+    glDeleteShader(fshader);
     return shader_program;
 }
 
 int main() {
-    init_gl_ctx();
-    auto freeglctx = defer(destroy_gl_ctx());
+    InitGlCtx();
 
     auto fusion = ff::FieldFusion();
-    auto stat = fusion.init("330");
+    auto stat = fusion.Init("330");
     if (not stat) {
         std::cerr << "failed to initialize field fusion" << std::endl;
         return 1;
     }
-    auto freefusion = defer(fusion.destroy());
-    auto atlas = fusion.new_atlas(kwindow_width);
-    auto fnt_handle = fusion.new_font(atlas, kfont_path).value();
+    auto atlas = fusion.NewAtlas(kwindow_width);
+    auto fnt_handle = fusion.NewFont(atlas, kfont_path).value();
     auto &fnt = fusion.fonts_.at(fnt_handle);
 
     ff::Glyphs glyphs;
@@ -88,7 +72,8 @@ int main() {
     float y0 = kinitial_font_size;
     int size0 = kinitial_font_size;
     for (size_t i = 0; i < kline_repeat - 1; i++) {
-        auto line = fusion.print_unicode(atlas, fnt, ktext, 200, y0, kwhite, size0).value();
+        auto line = fusion.PrintUnicode(atlas, fnt, ktext, 200, y0, kwhite, size0).value();
+        ff::GlyphsCat(glyphs, line);
 
         glyphs.insert(glyphs.end(), line.begin(), line.end());
         size0 += kfont_size_increment;
@@ -97,23 +82,23 @@ int main() {
 
     y0 += size0 + kline_padding;
     size0 -= kfont_size_increment * 2;
-    auto unicode_line = fusion.print_unicode(atlas, fnt, kunicode_text, 200, y0, kwhite, size0).value();
-    glyphs.insert(glyphs.end(), unicode_line.begin(), unicode_line.end());
+    auto unicode_line = fusion.PrintUnicode(atlas, fnt, kunicode_text, 200, y0, 0xffda09ff, size0).value();
+    ff::GlyphsCat(glyphs, unicode_line);
 
     auto vertical_line =
-        fusion.print_unicode(atlas, fnt, U"Field Fusion", 100, 0 + size0, 0xffffffff, 20.0f, 1, 1).value();
-    glyphs.insert(glyphs.end(), vertical_line.begin(), vertical_line.end());
+        fusion.PrintUnicode(atlas, fnt, U"Field Fusion", 100, 0 + size0, 0xff0000ff, 20.0f, 1, 1).value();
+    ff::GlyphsCat(glyphs, vertical_line);
 
     float projection[4][4];
-    ff::ortho(0, kwindow_width, kwindow_height, 0, -1.0f, 1.0f, projection);
+    ff::Ortho(0, kwindow_width, kwindow_height, 0, -1.0f, 1.0f, projection);
 
-    auto shader_program = get_shader_program();
+    auto shader_program = GetShaderProgram();
 
     for (; not glfwWindowShouldClose(window);) {
         glClear(GL_COLOR_BUFFER_BIT);
-        { (void)fusion.draw(atlas, fnt, glyphs, (float *)projection); }
+        { (void)fusion.Draw(atlas, fnt, glyphs, (float *)projection); }
         glUseProgram(shader_program);
-        glBindTexture(GL_TEXTURE_2D, atlas.atlas_texture_);
+        glBindTexture(GL_TEXTURE_2D, atlas.atlas_texture);
         glBegin(GL_QUADS);
         glVertex4f(-1, 0.0, 0, 1);
         glVertex4f(1, 0.0, 1, 1);
@@ -125,6 +110,9 @@ int main() {
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
+
+    fusion.Destroy();
+    DestroyGlCtx();
 }
 
 const char *kvertex_shader_src = R"SHADER(#version 330 core

@@ -8,13 +8,13 @@ struct Result {
 
     [[nodiscard]] Result(T &&value) : value_(value) {}
     [[nodiscard]] Result(Error error) : error_(error) {}
-    [[nodiscard]] inline bool ok() { return error_ == Error::Ok; }
+    [[nodiscard]] inline bool Ok() { return error_ == Error::Ok; }
     [[nodiscard]] inline T &value() {
-        if (not ok()) throw BadResultDereference();
+        if (not Ok()) throw BadResultDereference();
         return value_;
     }
 
-    [[nodiscard]] inline operator bool() { return ok(); }
+    [[nodiscard]] inline operator bool() { return Ok(); }
     [[nodiscard]] inline operator T &() { return value(); }
 
    private:

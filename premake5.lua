@@ -1,6 +1,11 @@
-function include_ff()
+function IncludeFf()
   includedirs "src/"
   links "fieldfusion"
+end
+
+function CopyHeaders()
+  postbuildcommands { "{MKDIR} %{cfg.buildtarget.directory}/include" }
+  postbuildcommands { "{COPY} src/*.hh %{cfg.buildtarget.directory}/include" }
 end
 
 workspace "fieldfusion"
@@ -25,10 +30,11 @@ project "fieldfusion"
   files "src/**"
   includedirs "/usr/include/freetype2"
   kind "StaticLib"
+  CopyHeaders()
 
 project "demo"
   includedirs "/usr/include/freetype2"
   kind "WindowedApp"
   files {"demo/**"}
   links "glfw"
-  include_ff()
+  IncludeFf()

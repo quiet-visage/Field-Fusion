@@ -14,30 +14,30 @@ struct vec2 {
     float y;
 };
 namespace outline_functions {
-struct glyph_len_ctx {
+struct GlyphLenCtx {
     int meta_size;
     int data_size;
 };
 
-int add_contour_size(const FT_Vector *to, void *user) {
-    struct glyph_len_ctx *ctx = (struct glyph_len_ctx *)user;
+int AddContourSize(const FT_Vector *to, void *user) {
+    struct GlyphLenCtx *ctx = (struct GlyphLenCtx *)user;
     ctx->data_size += 1;
     ctx->meta_size += 2; /* winding + nsegments */
     return 0;
 }
-int add_linear_size(const FT_Vector *to, void *user) {
-    struct glyph_len_ctx *ctx = (struct glyph_len_ctx *)user;
+int AddLinearSize(const FT_Vector *to, void *user) {
+    struct GlyphLenCtx *ctx = (struct GlyphLenCtx *)user;
     ctx->data_size += 1;
     ctx->meta_size += 2; /* color + npoints */
     return 0;
 }
-int add_quad_size(const FT_Vector *control, const FT_Vector *to, void *user) {
-    struct glyph_len_ctx *ctx = (struct glyph_len_ctx *)user;
+int AddQuadSize(const FT_Vector *control, const FT_Vector *to, void *user) {
+    struct GlyphLenCtx *ctx = (struct GlyphLenCtx *)user;
     ctx->data_size += 2;
     ctx->meta_size += 2; /* color + npoints */
     return 0;
 }
-int add_cubic_size(const FT_Vector *control1, const FT_Vector *control2, const FT_Vector *to, void *s) {
+int AddCubicSize(const FT_Vector *control1, const FT_Vector *control2, const FT_Vector *to, void *s) {
     fprintf(stderr, "Cubic segments not supported\n");
     return -1;
 }
@@ -49,7 +49,7 @@ struct glyph_data_ctx {
     int nsegments_index;
 };
 
-int add_contour(const FT_Vector *to, void *user) {
+int AddContour(const FT_Vector *to, void *user) {
     struct glyph_data_ctx *ctx = (struct glyph_data_ctx *)user;
     ctx->segment += 1; /* Start contour on a fresh glyph. */
     ctx->segment[0].x = to->x / kserializer_scale;
@@ -61,7 +61,7 @@ int add_contour(const FT_Vector *to, void *user) {
 
     return 0;
 }
-int add_linear(const FT_Vector *to, void *user) {
+int AddLinear(const FT_Vector *to, void *user) {
     struct glyph_data_ctx *ctx = (struct glyph_data_ctx *)user;
     ctx->segment[1].x = to->x / kserializer_scale;
     ctx->segment[1].y = to->y / kserializer_scale;
@@ -76,7 +76,7 @@ int add_linear(const FT_Vector *to, void *user) {
     ctx->meta_buffer[ctx->nsegments_index]++;
     return 0;
 }
-int add_quad(const FT_Vector *control, const FT_Vector *to, void *user) {
+int AddQuad(const FT_Vector *control, const FT_Vector *to, void *user) {
     struct glyph_data_ctx *ctx = (struct glyph_data_ctx *)user;
 
     ctx->segment[1].x = control->x / kserializer_scale;
@@ -88,7 +88,7 @@ int add_quad(const FT_Vector *control, const FT_Vector *to, void *user) {
        segment with a double point. Treat it as a linear segment. */
     if ((ctx->segment[1].x == ctx->segment[0].x && ctx->segment[1].y == ctx->segment[0].y) ||
         (ctx->segment[2].x == ctx->segment[1].x && ctx->segment[2].y == ctx->segment[1].y))
-        return add_linear(to, user);
+        return AddLinear(to, user);
 
     ctx->segment += 2;
 
@@ -99,7 +99,7 @@ int add_quad(const FT_Vector *control, const FT_Vector *to, void *user) {
 }
 }  // namespace outline_functions
 constexpr const Color start[3] = {CYAN, MAGENTA, YELLOW};
-void switch_color(enum Color *color, unsigned long long *seed, enum Color *_banned) {
+void SwitchColor(enum Color *color, unsigned long long *seed, enum Color *_banned) {
     enum Color banned = _banned ? *_banned : BLACK;
     enum Color combined = (Color)(*color & banned);
 
@@ -116,36 +116,36 @@ void switch_color(enum Color *color, unsigned long long *seed, enum Color *_bann
     *color = (Color)((shifted | shifted >> 3) & WHITE);
     *seed >>= 1;
 }
-inline vec2 mix(const vec2 a, const vec2 b, float weight) {
+inline vec2 Mix(const vec2 a, const vec2 b, float weight) {
     return {a.x * (1.0f - weight) + b.x * weight, a.y * (1.0f - weight) + b.y * weight};
 }
-inline vec2 subt(vec2 p1, vec2 p2) { return {p1.x - p2.x, p1.y - p2.y}; }
-inline float length(const vec2 v) { return (float)sqrt(v.x * v.x + v.y * v.y); }
-inline vec2 divide(const vec2 v, float f) { return {v.x / f, v.y / f}; }
-inline float cross(vec2 a, vec2 b) { return a.x * b.y - a.y * b.x; }
-inline float dot(vec2 a, vec2 b) { return a.x * b.x + a.y * b.y; }
-inline bool is_corner(const vec2 a, const vec2 b, float cross_threshold) {
-    return dot(a, b) <= 0 || fabs(cross(a, b)) > cross_threshold;
+inline vec2 Subt(vec2 p1, vec2 p2) { return {p1.x - p2.x, p1.y - p2.y}; }
+inline float Length(const vec2 v) { return (float)sqrt(v.x * v.x + v.y * v.y); }
+inline vec2 Divide(const vec2 v, float f) { return {v.x / f, v.y / f}; }
+inline float Cross(vec2 a, vec2 b) { return a.x * b.y - a.y * b.x; }
+inline float Dot(vec2 a, vec2 b) { return a.x * b.x + a.y * b.y; }
+inline bool IsCorner(const vec2 a, const vec2 b, float cross_threshold) {
+    return Dot(a, b) <= 0 || fabs(Cross(a, b)) > cross_threshold;
 }
-inline vec2 normalize(vec2 v) { return divide(v, length(v)); }
-inline vec2 segment_direction(const vec2 *points, int npoints, float param) {
-    return mix(subt(points[1], points[0]), subt(points[npoints - 1], points[npoints - 2]), param);
+inline vec2 Normalize(vec2 v) { return Divide(v, Length(v)); }
+inline vec2 SegmentDirection(const vec2 *points, int npoints, float param) {
+    return Mix(Subt(points[1], points[0]), Subt(points[npoints - 1], points[npoints - 2]), param);
 }
 inline vec2 segment_point(const vec2 *points, int npoints, float param) {
-    return mix(mix(points[0], points[1], param), mix(points[npoints - 2], points[npoints - 1], param), param);
+    return Mix(Mix(points[0], points[1], param), Mix(points[npoints - 2], points[npoints - 1], param), param);
 }
 inline float shoelace(const vec2 a, const vec2 b) { return (b.x - a.x) * (a.y + b.y); }
 }  // namespace internal
 
-Result<void> serialize_glyph(FT_Face face, int code, char *meta_buffer, float *point_buffer) noexcept {
+Result<void> SerializeGlyph(FT_Face face, int code, char *meta_buffer, float *point_buffer) noexcept {
     if (FT_Load_Char(face, code, FT_LOAD_NO_SCALE)) return Error::FtLoadCharFail;
 
     FT_Outline_Funcs fns;
     fns.shift = 0;
     fns.delta = 0;
-    fns.move_to = internal::outline_functions::add_contour;
-    fns.line_to = internal::outline_functions::add_linear;
-    fns.conic_to = internal::outline_functions::add_quad;
+    fns.move_to = internal::outline_functions::AddContour;
+    fns.line_to = internal::outline_functions::AddLinear;
+    fns.conic_to = internal::outline_functions::AddQuad;
     fns.cubic_to = 0;
 
     struct internal::outline_functions::glyph_data_ctx ctx;
@@ -244,18 +244,18 @@ Result<void> serialize_glyph(FT_Face face, int code, char *meta_buffer, float *p
             int prev_npoints = meta_buffer[meta_index + 2 * (nsegments - 2) + 1];
             internal::vec2 *prev_ptr = point_ptr;
             for (int j = 0; j < nsegments - 1; ++j) prev_ptr += (meta_buffer[meta_index + 2 * j + 1] - 1);
-            internal::vec2 prev_direction = internal::segment_direction(prev_ptr, prev_npoints, 1);
+            internal::vec2 prev_direction = internal::SegmentDirection(prev_ptr, prev_npoints, 1);
             int index = 0;
             internal::vec2 *cur_points = point_ptr;
             for (int j = 0; j < nsegments; ++j, ++index) {
                 meta_index++; /* Color, leave empty here. */
                 int npoints = meta_buffer[meta_index++];
 
-                internal::vec2 cur_direction = internal::segment_direction(cur_points, npoints, 0.0);
-                internal::vec2 new_prev_direction = internal::segment_direction(cur_points, npoints, 1.0);
+                internal::vec2 cur_direction = internal::SegmentDirection(cur_points, npoints, 0.0);
+                internal::vec2 new_prev_direction = internal::SegmentDirection(cur_points, npoints, 1.0);
 
-                if (internal::is_corner(internal::normalize(prev_direction),
-                                        internal::normalize(cur_direction), cross_threshold))
+                if (internal::IsCorner(internal::Normalize(prev_direction),
+                                       internal::Normalize(cur_direction), cross_threshold))
                     corners[len_corners++] = index;
                 cur_points += (npoints - 1);
                 prev_direction = new_prev_direction;
@@ -275,9 +275,9 @@ Result<void> serialize_glyph(FT_Face face, int code, char *meta_buffer, float *p
         } else if (len_corners == 1) {
             /* Teardrop */
             enum internal::Color colors[3] = {internal::WHITE, internal::WHITE};
-            internal::switch_color(&colors[0], &seed, NULL);
+            internal::SwitchColor(&colors[0], &seed, NULL);
             colors[2] = colors[0];
-            internal::switch_color(&colors[2], &seed, NULL);
+            internal::SwitchColor(&colors[2], &seed, NULL);
 
             int corner = corners[0];
             if (nsegments >= 3) {
@@ -297,7 +297,7 @@ Result<void> serialize_glyph(FT_Face face, int code, char *meta_buffer, float *p
             int start = corners[0];
             int m = nsegments;
             enum internal::Color color = internal::WHITE;
-            internal::switch_color(&color, &seed, NULL);
+            internal::SwitchColor(&color, &seed, NULL);
             enum internal::Color initial_color = color;
             for (int i = 0; i < m; ++i) {
                 int index = (start + i) % m;
@@ -306,7 +306,7 @@ Result<void> serialize_glyph(FT_Face face, int code, char *meta_buffer, float *p
                     ++spline;
                     enum internal::Color banned =
                         (enum internal::Color)((spline == corner_count - 1) * initial_color);
-                    internal::switch_color(&color, &seed, &banned);
+                    internal::SwitchColor(&color, &seed, &banned);
                 }
                 meta_buffer[meta_index + 2 * index] = (char)color;
             }
@@ -329,17 +329,17 @@ Result<void> serialize_glyph(FT_Face face, int code, char *meta_buffer, float *p
 /* We need two rounds of decomposing, the first one will just figure out
    how much space we need to serialize the glyph, and the second one
    serializes it and generates colour mapping for the segments. */
-Result<void> glyph_buffer_size(FT_Face face, int code, size_t *meta_size, size_t *point_size) noexcept {
+Result<void> GlyphBufferSize(FT_Face face, int code, size_t *meta_size, size_t *point_size) noexcept {
     if (FT_Load_Char(face, code, FT_LOAD_NO_SCALE)) return Error::FtLoadCharFail;
 
     FT_Outline_Funcs fns;
     fns.shift = 0;
     fns.delta = 0;
-    fns.move_to = internal::outline_functions::add_contour_size;
-    fns.line_to = internal::outline_functions::add_linear_size;
-    fns.conic_to = internal::outline_functions::add_quad_size;
-    fns.cubic_to = internal::outline_functions::add_cubic_size;
-    struct internal::outline_functions::glyph_len_ctx ctx = {1, 0};
+    fns.move_to = internal::outline_functions::AddContourSize;
+    fns.line_to = internal::outline_functions::AddLinearSize;
+    fns.conic_to = internal::outline_functions::AddQuadSize;
+    fns.cubic_to = internal::outline_functions::AddCubicSize;
+    struct internal::outline_functions::GlyphLenCtx ctx = {1, 0};
     if (FT_Outline_Decompose(&face->glyph->outline, &fns, &ctx)) return Error::FtDecomposeFail;
 
     *meta_size = ctx.meta_size;
