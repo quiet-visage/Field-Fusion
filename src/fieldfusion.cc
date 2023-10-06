@@ -128,14 +128,24 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
     return {};
 }
 
-[[nodiscard]] Result<size_t> FieldFusion::NewFont(Atlas &a, const char *path, const float scale,
-                                                  const float range) noexcept {
+[[nodiscard]] Result<Handle> FieldFusion::NewFont(const char *path, const float scale, const float range,
+                                                  const int texture_width,
+                                                  const int texture_padding) noexcept {
     fonts_.push_back({});
-    size_t handle = fonts_.size() - 1;
-    auto &font = fonts_.at(handle);
+    auto handle = fonts_.size() - 1;
+    auto &fontpack = fonts_.at(handle);
+    auto &font = fontpack.font;
+    auto &atlas = fontpack.atlas;
     font.font_path = path;
     font.scale = scale;
     font.range = range;
+
+    atlas.texture_width = texture_width;
+    atlas.padding = texture_padding;
+    glGenBuffers(1, &atlas.index_buffer);
+    glGenTextures(1, &atlas.index_texture);
+    glGenTextures(1, &atlas.atlas_texture);
+    glGenFramebuffers(1, &atlas.atlas_framebuffer);
 
     if (FT_New_Face(ft_library_, path, 0, &font.face)) return Error::FtFaceInitializationFail;
     FT_Select_Charmap(font.face, ft_encoding_unicode);
@@ -146,32 +156,37 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
     glGenTextures(1, &font.meta_input_texture);
     glGenTextures(1, &font.point_input_texture);
 
-    auto success = GenAscii(a, font);
-    if (not success) {
-        return success.error_;
-    }
+    auto success = GenAscii(fontpack);
+    if (not success) return success.error_;
 
     return handle;
 }
 
-[[nodiscard]] Atlas FieldFusion::NewAtlas(const int texture_width, const int padding) noexcept {
-    Atlas a;
-    a.texture_width = texture_width;
-    a.padding = padding;
-    glGenBuffers(1, &a.index_buffer);
-    glGenTextures(1, &a.index_texture);
-    glGenTextures(1, &a.atlas_texture);
-    glGenFramebuffers(1, &a.atlas_framebuffer);
-    return a;
-}
-
-[[nodiscard]] Result<void> FieldFusion::GenAscii(Atlas &a, Font &f) noexcept {
+[[nodiscard]] Result<void> FieldFusion::GenAscii(FontTexturePack &fpack) noexcept {
     std::vector<int32_t> codepoints(0xff);
     std::iota(codepoints.begin(), codepoints.end(), 0);
-    return GenGlyphs(a, f, codepoints);
+    return GenGlyphs(fpack, codepoints);
 }
 
-[[nodiscard]] Result<void> FieldFusion::GenGlyphs(Atlas &a, Font &f,
+[[nodiscard]] Result<void> FieldFusion::RemoveFont(const Handle handle) noexcept {
+    if (handle >= fonts_.size()) return Error::OutOfBounds;
+    {
+        auto &fpack = fonts_.at(handle);
+        FT_Done_Face(fpack.font.face);
+        glDeleteBuffers(1, &fpack.font.meta_input_buffer);
+        glDeleteBuffers(1, &fpack.font.point_input_buffer);
+        glDeleteBuffers(1, &fpack.font.meta_input_texture);
+        glDeleteBuffers(1, &fpack.font.point_input_texture);
+        glDeleteBuffers(1, &fpack.atlas.index_buffer);
+        glDeleteTextures(1, &fpack.atlas.index_texture);
+        glDeleteTextures(1, &fpack.atlas.atlas_texture);
+        glDeleteFramebuffers(1, &fpack.atlas.atlas_framebuffer);
+    }
+    fonts_.erase(fonts_.begin() + handle);
+    return {};
+}
+
+[[nodiscard]] Result<void> FieldFusion::GenGlyphs(FontTexturePack &fpack,
                                                   const std::vector<int32_t> &codepoints) noexcept {
     GLint original_viewport[4];
     glGetIntegerv(GL_VIEWPORT, original_viewport);
@@ -184,8 +199,8 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
     std::unique_ptr<size_t[]> point_sizes(new size_t[nrender]());
 
     /* We will start with a square texture. */
-    int new_texture_height = a.texture_height ? a.texture_height : 1;
-    int new_index_size = a.nallocated ? a.nallocated : 1;
+    int new_texture_height = fpack.atlas.texture_height ? fpack.atlas.texture_height : 1;
+    int new_index_size = fpack.atlas.nallocated ? fpack.atlas.nallocated : 1;
 
     /* Amount of new memory needed for the index. */
     std::unique_ptr<IndexEntry[]> atlas_index(new IndexEntry[nrender]());
@@ -193,7 +208,7 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
     size_t meta_size_sum = 0, point_size_sum = 0;
     for (size_t i = 0; (int)i < (int)nrender; ++i) {  // MARK
         int code = codepoints[i];
-        auto res = GlyphBufferSize(f.face, code, &meta_sizes[i], &point_sizes[i]);
+        auto res = GlyphBufferSize(fpack.font.face, code, &meta_sizes[i], &point_sizes[i]);
         if (not res) return res.error_;
 
         meta_size_sum += meta_sizes[i];
@@ -211,58 +226,59 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
         float buffer_width, buffer_height;
 
         int code = codepoints[i];
-        auto res = SerializeGlyph(f.face, code, meta_ptr, (GLfloat *)point_ptr);
+        auto res = SerializeGlyph(fpack.font.face, code, meta_ptr, (GLfloat *)point_ptr);
         if (not res) return res.error_;
 
-        auto m = f.character_index.insert(code);
-        m.get().advance[0] = (float)f.face->glyph->metrics.horiAdvance;
-        m.get().advance[1] = (float)f.face->glyph->metrics.vertAdvance;
+        auto m = fpack.font.character_index.insert(code);
+        m.get().advance[0] = (float)fpack.font.face->glyph->metrics.horiAdvance;
+        m.get().advance[1] = (float)fpack.font.face->glyph->metrics.vertAdvance;
 
-        buffer_width = f.face->glyph->metrics.width / kserializer_scale + f.range;
-        buffer_height = f.face->glyph->metrics.height / kserializer_scale + f.range;
-        buffer_width *= f.scale;
-        buffer_height *= f.scale;
+        buffer_width = fpack.font.face->glyph->metrics.width / kserializer_scale + fpack.font.range;
+        buffer_height = fpack.font.face->glyph->metrics.height / kserializer_scale + fpack.font.range;
+        buffer_width *= fpack.font.scale;
+        buffer_height *= fpack.font.scale;
 
         meta_ptr += meta_sizes[i];
         point_ptr += point_sizes[i];
 
-        if (a.offset_x + buffer_width > a.texture_width) {
-            a.offset_y += (a.y_increment + a.padding);
-            a.offset_x = 1;
-            a.y_increment = 0;
+        if (fpack.atlas.offset_x + buffer_width > fpack.atlas.texture_width) {
+            fpack.atlas.offset_y += (fpack.atlas.y_increment + fpack.atlas.padding);
+            fpack.atlas.offset_x = 1;
+            fpack.atlas.y_increment = 0;
         }
-        a.y_increment = (size_t)buffer_height > a.y_increment ? (size_t)buffer_height : a.y_increment;
+        fpack.atlas.y_increment =
+            (size_t)buffer_height > fpack.atlas.y_increment ? (size_t)buffer_height : fpack.atlas.y_increment;
 
-        atlas_index[i].offset_x = a.offset_x;
-        atlas_index[i].offset_y = a.offset_y;
+        atlas_index[i].offset_x = fpack.atlas.offset_x;
+        atlas_index[i].offset_y = fpack.atlas.offset_y;
         atlas_index[i].size_x = buffer_width;
         atlas_index[i].size_y = buffer_height;
-        atlas_index[i].bearing_x = f.face->glyph->metrics.horiBearingX;
-        atlas_index[i].bearing_y = f.face->glyph->metrics.horiBearingY;
-        atlas_index[i].glyph_width = f.face->glyph->metrics.width;
-        atlas_index[i].glyph_height = f.face->glyph->metrics.height;
+        atlas_index[i].bearing_x = fpack.font.face->glyph->metrics.horiBearingX;
+        atlas_index[i].bearing_y = fpack.font.face->glyph->metrics.horiBearingY;
+        atlas_index[i].glyph_width = fpack.font.face->glyph->metrics.width;
+        atlas_index[i].glyph_height = fpack.font.face->glyph->metrics.height;
 
-        a.offset_x += (size_t)buffer_width + a.padding;
+        fpack.atlas.offset_x += (size_t)buffer_width + fpack.atlas.padding;
 
-        while ((a.offset_y + buffer_height) > new_texture_height) {
+        while ((fpack.atlas.offset_y + buffer_height) > new_texture_height) {
             new_texture_height *= 2;
         }
         if (new_texture_height > max_texture_size_) return Error::ExceededMaxTextureSize;
 
-        while ((int)(a.nglyphs + i) >= new_index_size) {
+        while ((int)(fpack.atlas.nglyphs + i) >= new_index_size) {
             new_index_size *= 2;
         }
     }
 
     /* Allocate and fill the buffers on GPU. */
-    glBindBuffer(GL_ARRAY_BUFFER, f.meta_input_buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, fpack.font.meta_input_buffer);
     glBufferData(GL_ARRAY_BUFFER, meta_size_sum, metadata.get(), GL_DYNAMIC_READ);
 
-    glBindBuffer(GL_ARRAY_BUFFER, f.point_input_buffer);
+    glBindBuffer(GL_ARRAY_BUFFER, fpack.font.point_input_buffer);
     glBufferData(GL_ARRAY_BUFFER, point_size_sum, point_data.get(), GL_DYNAMIC_READ);
 
-    if ((int)a.nallocated == new_index_size) {
-        glBindBuffer(GL_ARRAY_BUFFER, a.index_buffer);
+    if ((int)fpack.atlas.nallocated == new_index_size) {
+        glBindBuffer(GL_ARRAY_BUFFER, fpack.atlas.index_buffer);
     } else {
         GLuint new_buffer;
         glGenBuffers(1, &new_buffer);
@@ -273,44 +289,45 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
             glBindBuffer(GL_ARRAY_BUFFER, 0);
             return Error::OutOfGpuMemory;
         }
-        if (a.nglyphs) {
-            glBindBuffer(GL_COPY_READ_BUFFER, a.index_buffer);
-            glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_ARRAY_BUFFER, 0, 0, a.nglyphs * sizeof(IndexEntry));
+        if (fpack.atlas.nglyphs) {
+            glBindBuffer(GL_COPY_READ_BUFFER, fpack.atlas.index_buffer);
+            glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_ARRAY_BUFFER, 0, 0,
+                                fpack.atlas.nglyphs * sizeof(IndexEntry));
             glBindBuffer(GL_COPY_READ_BUFFER, 0);
         }
-        a.nallocated = new_index_size;
-        glDeleteBuffers(1, &a.index_buffer);
-        a.index_buffer = new_buffer;
+        fpack.atlas.nallocated = new_index_size;
+        glDeleteBuffers(1, &fpack.atlas.index_buffer);
+        fpack.atlas.index_buffer = new_buffer;
     }
     const size_t index_size = nrender * sizeof(IndexEntry);
-    glBufferSubData(GL_ARRAY_BUFFER, sizeof(IndexEntry) * a.nglyphs, index_size, atlas_index.get());
+    glBufferSubData(GL_ARRAY_BUFFER, sizeof(IndexEntry) * fpack.atlas.nglyphs, index_size, atlas_index.get());
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     /* Link sampler textures to the buffers. */
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_BUFFER, f.meta_input_texture);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_R8UI, f.meta_input_buffer);
+    glBindTexture(GL_TEXTURE_BUFFER, fpack.font.meta_input_texture);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_R8UI, fpack.font.meta_input_buffer);
     glBindTexture(GL_TEXTURE_BUFFER, 0);
 
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_BUFFER, f.point_input_texture);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, f.point_input_buffer);
+    glBindTexture(GL_TEXTURE_BUFFER, fpack.font.point_input_texture);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, fpack.font.point_input_buffer);
     glBindTexture(GL_TEXTURE_BUFFER, 0);
 
     glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_BUFFER, a.index_texture);
-    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, a.index_buffer);
+    glBindTexture(GL_TEXTURE_BUFFER, fpack.atlas.index_texture);
+    glTexBuffer(GL_TEXTURE_BUFFER, GL_R32F, fpack.atlas.index_buffer);
     glBindTexture(GL_TEXTURE_BUFFER, 0);
 
     glActiveTexture(GL_TEXTURE0);
 
     /* Generate the atlas texture and bind it as the framebuffer. */
-    if (a.texture_height == new_texture_height) {
+    if (fpack.atlas.texture_height == new_texture_height) {
         /* No need to extend the texture. */
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, a.atlas_framebuffer);
-        glBindTexture(GL_TEXTURE_2D, a.atlas_texture);
-        glViewport(0, 0, a.texture_width, a.texture_height);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fpack.atlas.atlas_framebuffer);
+        glBindTexture(GL_TEXTURE_2D, fpack.atlas.atlas_texture);
+        glViewport(0, 0, fpack.atlas.texture_width, fpack.atlas.texture_height);
     } else {
         GLuint new_texture;
         GLuint new_framebuffer;
@@ -322,8 +339,8 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, a.texture_width, new_texture_height, 0, GL_RGBA, GL_FLOAT,
-                     NULL);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, fpack.atlas.texture_width, new_texture_height, 0, GL_RGBA,
+                     GL_FLOAT, NULL);
 
         if (glGetError() == GL_OUT_OF_MEMORY) {
             /* Buffer size too big, are you trying to type Klingon? */
@@ -334,31 +351,34 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
         }
 
         glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, new_texture, 0);
-        glViewport(0, 0, a.texture_width, new_texture_height);
+        glViewport(0, 0, fpack.atlas.texture_width, new_texture_height);
         glClearColor(0.0, 0.0, 0.0, 1.0);
         glClear(GL_COLOR_BUFFER_BIT);
 
-        if (a.texture_height) {
+        if (fpack.atlas.texture_height) {
             /* Old texture had data -> copy. */
-            glBindFramebuffer(GL_READ_FRAMEBUFFER, a.atlas_framebuffer);
-            glBlitFramebuffer(0, 0, a.texture_width, a.texture_height, 0, 0, a.texture_width,
-                              a.texture_height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, fpack.atlas.atlas_framebuffer);
+            glBlitFramebuffer(0, 0, fpack.atlas.texture_width, fpack.atlas.texture_height, 0, 0,
+                              fpack.atlas.texture_width, fpack.atlas.texture_height, GL_COLOR_BUFFER_BIT,
+                              GL_NEAREST);
             glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
         }
 
         glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-        a.texture_height = new_texture_height;
-        glDeleteTextures(1, &a.atlas_texture);
-        a.atlas_texture = new_texture;
-        glDeleteFramebuffers(1, &a.atlas_framebuffer);
-        a.atlas_framebuffer = new_framebuffer;
+        fpack.atlas.texture_height = new_texture_height;
+        glDeleteTextures(1, &fpack.atlas.atlas_texture);
+        fpack.atlas.atlas_texture = new_texture;
+        glDeleteFramebuffers(1, &fpack.atlas.atlas_framebuffer);
+        fpack.atlas.atlas_framebuffer = new_framebuffer;
     }
     glBindTexture(GL_TEXTURE_2D, 0);
 
     GLfloat framebuffer_projection[4][4];
-    Ortho(0, (GLfloat)a.texture_width, 0, (GLfloat)a.texture_height, -1.0, 1.0, framebuffer_projection);
-    Ortho(-(GLfloat)a.texture_width, (GLfloat)a.texture_width, -(GLfloat)a.texture_height,
-          (GLfloat)a.texture_height, -1.0, 1.0, a.projection);
+    Ortho(0, (GLfloat)fpack.atlas.texture_width, 0, (GLfloat)fpack.atlas.texture_height, -1.0, 1.0,
+          framebuffer_projection);
+    Ortho(-(GLfloat)fpack.atlas.texture_width, (GLfloat)fpack.atlas.texture_width,
+          -(GLfloat)fpack.atlas.texture_height, (GLfloat)fpack.atlas.texture_height, -1.0, 1.0,
+          fpack.atlas.projection);
 
     glUseProgram(gen_shader_);
     glUniform1i(uniforms_.metadata, 0);
@@ -366,8 +386,8 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
 
     glUniformMatrix4fv(uniforms_.atlas_projection, 1, GL_FALSE, (GLfloat *)framebuffer_projection);
 
-    glUniform2f(uniforms_.scale, f.scale, f.scale);
-    glUniform1f(uniforms_.range, f.range);
+    glUniform2f(uniforms_.scale, fpack.font.scale, fpack.font.scale);
+    glUniform1f(uniforms_.range, fpack.font.range);
     glUniform1i(uniforms_.meta_offset, 0);
     glUniform1i(uniforms_.point_offset, 0);
 
@@ -375,10 +395,10 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
         fprintf(stderr, "msdfgl: framebuffer incomplete: %x\n", glCheckFramebufferStatus(GL_FRAMEBUFFER));
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_BUFFER, f.meta_input_texture);
+    glBindTexture(GL_TEXTURE_BUFFER, fpack.font.meta_input_texture);
 
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_BUFFER, f.point_input_texture);
+    glBindTexture(GL_TEXTURE_BUFFER, fpack.font.point_input_texture);
 
     glBindVertexArray(bbox_vao_);
     glBindBuffer(GL_ARRAY_BUFFER, bbox_vbo_);
@@ -395,8 +415,8 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
         GLfloat bounding_box[] = {0, 0, w, 0, 0, h, 0, h, w, 0, w, h};
         glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(bounding_box), bounding_box);
 
-        glUniform2f(uniforms_.translate, -g.bearing_x / kserializer_scale + f.range / 2.0f,
-                    (g.glyph_height - g.bearing_y) / kserializer_scale + f.range / 2.0f);
+        glUniform2f(uniforms_.translate, -g.bearing_x / kserializer_scale + fpack.font.range / 2.0f,
+                    (g.glyph_height - g.bearing_y) / kserializer_scale + fpack.font.range / 2.0f);
 
         glUniform2f(uniforms_.texture_offset, g.offset_x, g.offset_y);
         glUniform1i(uniforms_.meta_offset, meta_offset);
@@ -422,18 +442,18 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    a.nglyphs += nrender;
+    fpack.atlas.nglyphs += nrender;
 
     glViewport(original_viewport[0], original_viewport[1], original_viewport[2], original_viewport[3]);
 
     return {};
 }
 
-[[nodiscard]] Result<void> FieldFusion::Draw(Atlas &a, Font &f, Glyphs glyphs,
+[[nodiscard]] Result<void> FieldFusion::Draw(FontTexturePack &fpack, Glyphs glyphs,
                                              const float *projection) noexcept {
 #pragma omp parallel for
     for (int i = 0; i < glyphs.size(); ++i) {
-        auto e = f.character_index.at(glyphs.at(i).codepoint);
+        auto e = fpack.font.character_index.at(glyphs.at(i).codepoint);
         if (not e) return Error::GlyphGenerationFail;
         glyphs.at(i).codepoint = e.value().get().codepoint_index;
     }
@@ -471,18 +491,18 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
 
     /* Bind atlas texture and index buffer. */
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, a.atlas_texture);
+    glBindTexture(GL_TEXTURE_2D, fpack.atlas.atlas_texture);
     glUniform1i(uniforms_.atlas, 0);
 
     glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_BUFFER, a.index_texture);
+    glBindTexture(GL_TEXTURE_BUFFER, fpack.atlas.index_texture);
     glUniform1i(uniforms_.index, 1);
 
-    glUniformMatrix4fv(uniforms_.font_atlas_projection, 1, GL_FALSE, (GLfloat *)a.projection);
+    glUniformMatrix4fv(uniforms_.font_atlas_projection, 1, GL_FALSE, (GLfloat *)fpack.atlas.projection);
 
     glUniformMatrix4fv(uniforms_.window_projection, 1, GL_FALSE, projection);
-    glUniform1f(uniforms_.padding, (GLfloat)(f.range / 2.0 * kserializer_scale));
-    glUniform1f(uniforms_.units_per_em, (GLfloat)f.face->units_per_EM);
+    glUniform1f(uniforms_.padding, (GLfloat)(fpack.font.range / 2.0 * kserializer_scale));
+    glUniform1f(uniforms_.units_per_em, (GLfloat)fpack.font.face->units_per_EM);
     glUniform2fv(uniforms_.dpi, 1, dpi_);
 
     /* Render the glyphs. */
@@ -512,11 +532,12 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
     return {};
 }
 
-[[nodiscard]] Result<Glyphs> FieldFusion::PrintUnicode(Atlas &a, Font &f, const std::u32string_view buffer,
-                                                       const float x, const float y, const long color,
-                                                       const float size, const bool enable_kerning,
-                                                       const bool print_vertically, const float offset,
-                                                       const float skew, const float strength) noexcept {
+[[nodiscard]] Result<Glyphs> FieldFusion::PrintUnicode(FontTexturePack &fpack,
+                                                       const std::u32string_view buffer, const float x,
+                                                       const float y, const long color, const float size,
+                                                       const bool enable_kerning, const bool print_vertically,
+                                                       const float offset, const float skew,
+                                                       const float strength) noexcept {
     std::vector<Glyph> result;
     float x0 = x;
     float y0 = y;
@@ -533,33 +554,33 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
         element.skew = skew;
         element.strength = strength;
 
-        auto idx = f.character_index.at(codepoint);
+        auto idx = fpack.font.character_index.at(codepoint);
         if (not idx.has_value()) {
-            auto gen_status = GenGlyphs(a, f, std::vector<int32_t>{codepoint});
+            auto gen_status = GenGlyphs(fpack, std::vector<int32_t>{codepoint});
             if (not gen_status) return gen_status.error_;
-            idx = f.character_index.at(codepoint);
+            idx = fpack.font.character_index.at(codepoint);
             assert(idx.has_value());
         }
 
         FT_Vector kerning{0};
-        const bool should_get_kerning = enable_kerning and FT_HAS_KERNING(f.face) and (i > 0);
+        const bool should_get_kerning = enable_kerning and FT_HAS_KERNING(fpack.font.face) and (i > 0);
         if (should_get_kerning) {
             const auto &previous_character = buffer.at(i - 1);
-            FT_Get_Kerning(f.face, FT_Get_Char_Index(f.face, previous_character),
-                           FT_Get_Char_Index(f.face, codepoint), FT_KERNING_UNSCALED, &kerning);
+            FT_Get_Kerning(fpack.font.face, FT_Get_Char_Index(fpack.font.face, previous_character),
+                           FT_Get_Char_Index(fpack.font.face, codepoint), FT_KERNING_UNSCALED, &kerning);
         }
 
         if (not print_vertically)
-            x0 +=
-                (idx.value().get().advance[0] + kerning.x) * (size * dpi_[0] / 72.0f) / f.face->units_per_EM;
+            x0 += (idx.value().get().advance[0] + kerning.x) * (size * dpi_[0] / 72.0f) /
+                  fpack.font.face->units_per_EM;
         else
-            y0 +=
-                (idx.value().get().advance[1] + kerning.y) * (size * dpi_[0] / 72.0f) / f.face->units_per_EM;
+            y0 += (idx.value().get().advance[1] + kerning.y) * (size * dpi_[0] / 72.0f) /
+                  fpack.font.face->units_per_EM;
     }
     return result;
 }
 void FieldFusion::Destroy() noexcept {
-    for (auto &font : fonts_) FT_Done_Face(font.face);
+    while (not fonts_.empty()) assert(RemoveFont(0));
     FT_Done_FreeType(ft_library_);
 }
 }  // namespace ff

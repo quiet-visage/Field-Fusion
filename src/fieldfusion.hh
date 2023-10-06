@@ -11,6 +11,7 @@
 #include "ffmap.hh"
 
 namespace ff {
+using Handle = size_t;
 struct Font {
     const char *font_path;
     float scale;
@@ -122,6 +123,10 @@ struct Glyph {
      */
     float strength;
 };
+struct FontTexturePack {
+    Font font;
+    Atlas atlas;
+};
 
 using Glyphs = std::vector<Glyph>;
 
@@ -155,16 +160,17 @@ struct FieldFusion {
     uint bbox_vao_;
     uint bbox_vbo_;
     int max_texture_size_;
-    std::vector<Font> fonts_;
+    std::vector<FontTexturePack> fonts_;
 
     [[nodiscard]] Result<void> Init(const char *version) noexcept;
-    [[nodiscard]] Result<size_t> NewFont(Atlas &, const char *path, const float scale = 4.0f,
-                                         const float range = 2.0f) noexcept;
-    Atlas NewAtlas(const int texture_width, const int padding = 2) noexcept;
-    [[nodiscard]] Result<void> GenAscii(Atlas &, Font &) noexcept;
-    [[nodiscard]] Result<void> GenGlyphs(Atlas &, Font &, const std::vector<int32_t> &codepoints) noexcept;
-    [[nodiscard]] Result<void> Draw(Atlas &, Font &, Glyphs, const float *projection) noexcept;
-    [[nodiscard]] Result<Glyphs> PrintUnicode(Atlas &, Font &, const std::u32string_view buffer,
+    [[nodiscard]] Result<Handle> NewFont(const char *path, const float scale = 4.0f, const float range = 2.0f,
+                                         const int texture_width = 1024,
+                                         const int texture_padding = 2) noexcept;
+    [[nodiscard]] Result<void> RemoveFont(const Handle) noexcept;
+    [[nodiscard]] Result<void> GenAscii(FontTexturePack &) noexcept;
+    [[nodiscard]] Result<void> GenGlyphs(FontTexturePack &, const std::vector<int32_t> &codepoints) noexcept;
+    [[nodiscard]] Result<void> Draw(FontTexturePack &, Glyphs, const float *projection) noexcept;
+    [[nodiscard]] Result<Glyphs> PrintUnicode(FontTexturePack &, const std::u32string_view buffer,
                                               const float x, const float y, const long color,
                                               const float size, const bool enable_kerning = true,
                                               const bool print_vertically = false, const float offset = 0.0f,
