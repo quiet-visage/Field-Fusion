@@ -19,7 +19,8 @@ constexpr const long kwhite = 0xffffffff;
 static const std::u32string ktext = U"The quick brown fox jumps over the lazy dog";
 static const std::u32string kunicode_text = U"Быстрая бурая лиса перепрыгивает через ленивую собаку";
 constexpr const char *kwin_title = "msdf demo";
-constexpr const char *kfont_path{"/usr/share/fonts/TTF/JetBrainsMonoNerdFontMono-Regular.ttf"};
+constexpr const char *kregular_font_path{"jetbrainsfont/fonts/ttf/JetBrainsMono-Regular.ttf"};
+constexpr const char *kitalic_font_path{"jetbrainsfont/fonts/ttf/JetBrainsMono-MediumItalic.ttf"};
 
 static GLFWwindow *window;
 void InitGlCtx() {
@@ -63,16 +64,19 @@ int main() {
         std::cerr << "failed to initialize field fusion" << std::endl;
         return 1;
     }
-    auto atlas = fusion.NewAtlas(kwindow_width);
-    auto fnt_handle = fusion.NewFont(atlas, kfont_path).value();
-    auto &fnt = fusion.fonts_.at(fnt_handle);
+    auto regular_atlas = fusion.NewAtlas(kwindow_width);
+    auto regular_font_handle = fusion.NewFont(regular_atlas, kregular_font_path).value();
+    auto italic_atlas = fusion.NewAtlas(kwindow_width);
+    auto italic_font_handle = fusion.NewFont(italic_atlas, kitalic_font_path).value();
+    auto &regular_font = fusion.fonts_.at(regular_font_handle);
+    auto &italic_font = fusion.fonts_.at(italic_font_handle);
 
     ff::Glyphs glyphs;
     glyphs.reserve(0xff);
     float y0 = kinitial_font_size;
     int size0 = kinitial_font_size;
     for (size_t i = 0; i < kline_repeat - 1; i++) {
-        auto line = fusion.PrintUnicode(atlas, fnt, ktext, 200, y0, kwhite, size0).value();
+        auto line = fusion.PrintUnicode(regular_atlas, regular_font, ktext, 200, y0, kwhite, size0).value();
         ff::GlyphsCat(glyphs, line);
 
         glyphs.insert(glyphs.end(), line.begin(), line.end());
@@ -82,11 +86,14 @@ int main() {
 
     y0 += size0 + kline_padding;
     size0 -= kfont_size_increment * 2;
-    auto unicode_line = fusion.PrintUnicode(atlas, fnt, kunicode_text, 200, y0, 0xffda09ff, size0).value();
+    auto unicode_line =
+        fusion.PrintUnicode(regular_atlas, regular_font, kunicode_text, 200, y0, 0xffda09ff, size0).value();
     ff::GlyphsCat(glyphs, unicode_line);
 
     auto vertical_line =
-        fusion.PrintUnicode(atlas, fnt, U"Field Fusion", 100, 0 + size0, 0xff0000ff, 20.0f, 1, 1).value();
+        fusion
+            .PrintUnicode(italic_atlas, italic_font, U"Field Fusion", 100, 0 + size0, 0xff0000ff, 20.0f, 1, 1)
+            .value();
     ff::GlyphsCat(glyphs, vertical_line);
 
     float projection[4][4];
@@ -96,9 +103,9 @@ int main() {
 
     for (; not glfwWindowShouldClose(window);) {
         glClear(GL_COLOR_BUFFER_BIT);
-        { (void)fusion.Draw(atlas, fnt, glyphs, (float *)projection); }
+        { (void)fusion.Draw(regular_atlas, regular_font, glyphs, (float *)projection); }
         glUseProgram(shader_program);
-        glBindTexture(GL_TEXTURE_2D, atlas.atlas_texture);
+        glBindTexture(GL_TEXTURE_2D, regular_atlas.atlas_texture);
         glBegin(GL_QUADS);
         glVertex4f(-1, 0.0, 0, 1);
         glVertex4f(1, 0.0, 1, 1);

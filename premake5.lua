@@ -8,6 +8,10 @@ function CopyHeaders()
   postbuildcommands { "{COPY} src/*.hh %{cfg.buildtarget.directory}/include" }
 end
 
+function CopyJetbrains()
+  postbuildcommands { "{COPY} fonts/jetbrainsfont %{cfg.buildtarget.directory}/" }
+end
+
 workspace "fieldfusion"
   language "C++"
   cppdialect "C++17"
@@ -38,3 +42,4 @@ project "demo"
   files {"demo/**"}
   links "glfw"
   IncludeFf()
+  CopyJetbrains()
