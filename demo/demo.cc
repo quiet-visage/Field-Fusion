@@ -1,11 +1,21 @@
-#include <GL/glew.h>
+#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#define GLAD_GL_IMPLEMENTATION
+#include <glad.h>
 
 #include <cassert>
+#include <codecvt>
 #include <iostream>
+#include <locale>
+#include <sstream>
 #include <string>
 
-#include "fieldfusion.hh"
+#define FIELDFUSION_DONT_INCLUDE_GLAD
+#define FIELDFUSION_IMPLEMENTATION
+#include <fieldfusion.hpp>
+
+using std::cout;
+using std::endl;
 
 extern const char *kvertex_shader_src;
 extern const char *kfragment_shader_src;
@@ -25,16 +35,35 @@ constexpr const char *kitalic_font_path{"jetbrainsfont/fonts/ttf/JetBrainsMono-M
 static GLFWwindow *window;
 void InitGlCtx() {
     assert(glfwInit() == GLFW_TRUE);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
     window = glfwCreateWindow(kwindow_width, kwindow_height, kwin_title, 0, 0);
     glfwMakeContextCurrent(window);
-    assert(glewInit() == GLEW_OK);
+    assert(gladLoadGL(glfwGetProcAddress));
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glClearColor(0.25f, 0.25f, 0.25f, 1.0f);
 }
 
 void DestroyGlCtx() { glfwTerminate(); }
+
+std::u32string to_unicode(const std::string &s) {
+    std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t> conv;
+    return conv.from_bytes(s);
+}
+
+ff::Glyphs get_variable_size_glyphs(ff::FieldFusion &fusion, ff::FontTexturePack &fpack) {
+    ff::Glyphs glyphs;
+    float y0 = kinitial_font_size;
+    int size0 = kinitial_font_size;
+    for (size_t i = 0; i < kline_repeat - 1; i++) {
+        ff::GlyphsCat(glyphs, fusion.PrintUnicode(fpack, ktext, 200, y0, kwhite, size0, 0));
+        size0 += kfont_size_increment;
+        y0 += size0 + kline_padding;
+    }
+    return glyphs;
+}
 
 int GetShaderProgram() {
     auto shader_program = glCreateProgram();
@@ -57,9 +86,15 @@ int GetShaderProgram() {
 
 int main() {
     InitGlCtx();
+    std::u32string details =
+        U"Vendor : " + to_unicode(reinterpret_cast<const char *>(glGetString(GL_VENDOR))) + U"\nRenderer : " +
+        to_unicode(reinterpret_cast<const char *>(glGetString(GL_RENDERER))) + U"\nVersion : " +
+        to_unicode(reinterpret_cast<const char *>(glGetString(GL_VERSION))) +
+        U"\nShader Language Version : " +
+        to_unicode(reinterpret_cast<const char *>(glGetString(GL_SHADING_LANGUAGE_VERSION)));
 
     auto fusion = ff::FieldFusion();
-    auto stat = fusion.Init("440");
+    auto stat = fusion.Init("330");
     if (not stat) {
         std::cerr << "failed to initialize field fusion" << std::endl;
         return 1;
@@ -69,26 +104,13 @@ int main() {
     auto &regular_font = fusion.fonts_.at(regular_font_handle);
     auto &italic_font = fusion.fonts_.at(italic_font_handle);
 
-    ff::Glyphs glyphs;
-    glyphs.reserve(0xff);
-    float y0 = kinitial_font_size;
-    int size0 = kinitial_font_size;
-    for (size_t i = 0; i < kline_repeat - 1; i++) {
-        auto line = fusion.PrintUnicode(regular_font, ktext, 200, y0, kwhite, size0).value();
-        ff::GlyphsCat(glyphs, line);
-
-        glyphs.insert(glyphs.end(), line.begin(), line.end());
-        size0 += kfont_size_increment;
-        y0 += size0 + kline_padding;
-    }
-
-    y0 += size0 + kline_padding;
-    size0 -= kfont_size_increment * 2;
-    auto unicode_line = fusion.PrintUnicode(regular_font, kunicode_text, 200, y0, 0xffda09ff, size0).value();
-    ff::GlyphsCat(glyphs, unicode_line);
-
+    auto glyphs = get_variable_size_glyphs(fusion, regular_font);
+    ff::GlyphsCat(
+        glyphs, fusion.PrintUnicode(regular_font, details, 0, kwindow_height * 0.5f, kwhite, 14.0f, 1, 1, 0));
+    ff::GlyphsCat(glyphs, fusion.PrintUnicode(regular_font, kunicode_text, kwindow_width * 0.5f,
+                                              kwindow_height * 0.5f, 0xffda09ff, 14.0f));
     auto vertical_line =
-        fusion.PrintUnicode(italic_font, U"Field Fusion", 100, 0 + size0, 0xff0000ff, 20.0f, 1, 1).value();
+        fusion.PrintUnicode(italic_font, U"Field Fusion", 100, 14.0f, 0xff0000ff, 20.0f, 0, 1, 1).value();
 
     float projection[4][4];
     ff::Ortho(0, kwindow_width, kwindow_height, 0, -1.0f, 1.0f, projection);
@@ -99,16 +121,6 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT);
         { (void)fusion.Draw(regular_font, glyphs, (float *)projection); }
         { (void)fusion.Draw(italic_font, vertical_line, (float *)projection); }
-        glUseProgram(shader_program);
-        glBindTexture(GL_TEXTURE_2D, regular_font.atlas.atlas_texture);
-        glBegin(GL_QUADS);
-        glVertex4f(-1, 0.0, 0, 1);
-        glVertex4f(1, 0.0, 1, 1);
-        glVertex4f(1, -1, 1, 0);
-        glVertex4f(-1, -1, 0, 0);
-        glEnd();
-        glUseProgram(0);
-
         glfwSwapBuffers(window);
         glfwPollEvents();
     }

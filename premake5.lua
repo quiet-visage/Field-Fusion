@@ -1,8 +1,3 @@
-function IncludeFf()
-  includedirs "src/"
-  links "fieldfusion"
-end
-
 function CopyHeaders()
   postbuildcommands { "{MKDIR} %{cfg.buildtarget.directory}/include" }
   postbuildcommands { "{COPY} src/*.hh %{cfg.buildtarget.directory}/include" }
@@ -16,13 +11,7 @@ workspace "fieldfusion"
   language "C++"
   cppdialect "C++17"
   configurations {"release", "debug"}
-  links {
-    "GLEW",
-    "EGL", 
-    "GL",  
-    "freetype",
-    "GLU", 
-  }
+  includedirs {"external/", "src/"}
   filter "configurations:debug"
   defines {"DEBUG"}
   symbols "On"
@@ -30,16 +19,10 @@ workspace "fieldfusion"
   filter "configurations:release"
     optimize "Full"
 
-project "fieldfusion"
-  files "src/**"
-  includedirs "/usr/include/freetype2"
-  kind "StaticLib"
-  CopyHeaders()
-
 project "demo"
-  includedirs "/usr/include/freetype2"
   kind "WindowedApp"
+  includedirs "/usr/include/freetype2"
   files {"demo/**"}
+  links "freetype"
   links "glfw"
-  IncludeFf()
   CopyJetbrains()
