@@ -11,6 +11,7 @@
 #ifndef FIELDFUSION_DONT_INCLUDE_GLAD
 #include <glad.h>
 #endif
+#include <GL/gl.h>
 
 #include <cmath>
 
@@ -893,7 +894,16 @@ vec3 get_pixel_distance(vec2 point) {
 namespace {
 constexpr const float kserializer_scale = 64;
 static_assert(kserializer_scale >= 8);
-enum Color : int { BLACK = 0, RED = 1, GREEN = 2, YELLOW = 3, BLUE = 4, MAGENTA = 5, CYAN = 6, WHITE = 7 };
+enum class Color : int {
+    Black = 0,
+    Red = 1,
+    Green = 2,
+    Yellow = 3,
+    Blue = 4,
+    Magenta = 5,
+    Cyan = 6,
+    White = 7
+};
 struct vec2 {
     float x;
     float y;
@@ -983,22 +993,23 @@ int AddQuad(const FT_Vector *control, const FT_Vector *to, void *user) {
     return 0;
 }
 }  // namespace outline_functions
-constexpr const Color start[3] = {CYAN, MAGENTA, YELLOW};
+constexpr const Color start[3] = {Color::Cyan, Color::Magenta, Color::Yellow};
 void SwitchColor(enum Color *color, unsigned long long *seed, enum Color *_banned) {
-    enum Color banned = _banned ? *_banned : BLACK;
-    enum Color combined = (Color)(*color & banned);
+    enum Color banned = _banned ? *_banned : Color::Black;
+    enum Color combined = (Color)(static_cast<int>(*color) & static_cast<int>(banned));
 
-    if (combined == RED || combined == GREEN || combined == BLUE) {
-        *color = (Color)(combined ^ WHITE);
+    if (combined == Color::Red || combined == Color::Green || combined == Color::Blue) {
+        *color = (Color)(static_cast<int>(combined) ^ static_cast<int>(Color::White));
         return;
     }
-    if (*color == BLACK || *color == WHITE) {
+    if (*color == Color::Black || *color == Color::White) {
         *color = start[*seed % 3];
         *seed /= 3;
         return;
     }
-    int shifted = *color << (1 + (*seed & 1));
-    *color = (Color)((shifted | shifted >> 3) & WHITE);
+    int shifted = static_cast<int>(*color) << (1 + (*seed & 1));
+    *color = (Color)((static_cast<int>(shifted) | static_cast<int>(shifted) >> 3) &
+                     static_cast<int>(Color::White));
     *seed >>= 1;
 }
 inline vec2 Mix(const vec2 a, const vec2 b, float weight) {
@@ -1151,12 +1162,12 @@ Result<void> SerializeGlyph(FT_Face face, int code, char *meta_buffer, float *po
         if (!len_corners) {
             /* Smooth contour */
             for (int j = 0; j < nsegments; ++j) {
-                meta_buffer[meta_index++] = WHITE;
+                meta_buffer[meta_index++] = static_cast<int>(Color::White);
                 meta_index++; /* npoints */
             }
         } else if (len_corners == 1) {
             /* Teardrop */
-            enum Color colors[3] = {WHITE, WHITE};
+            enum Color colors[3] = {Color::White, Color::White};
             SwitchColor(&colors[0], &seed, NULL);
             colors[2] = colors[0];
             SwitchColor(&colors[2], &seed, NULL);
@@ -1178,7 +1189,7 @@ Result<void> SerializeGlyph(FT_Face face, int code, char *meta_buffer, float *po
             int spline = 0;
             int start = corners[0];
             int m = nsegments;
-            enum Color color = WHITE;
+            enum Color color = Color::White;
             SwitchColor(&color, &seed, NULL);
             enum Color initial_color = color;
             for (int i = 0; i < m; ++i) {
@@ -1186,7 +1197,8 @@ Result<void> SerializeGlyph(FT_Face face, int code, char *meta_buffer, float *po
 
                 if (spline + 1 < corner_count && corners[spline + 1] == index) {
                     ++spline;
-                    enum Color banned = (enum Color)((spline == corner_count - 1) * initial_color);
+                    enum Color banned =
+                        (enum Color)((spline == corner_count - 1) * static_cast<int>(initial_color));
                     SwitchColor(&color, &seed, &banned);
                 }
                 meta_buffer[meta_index + 2 * index] = (char)color;
