@@ -11,7 +11,6 @@ workspace "fieldfusion"
   language "C++"
   cppdialect "C++17"
   configurations {"release", "debug"}
-  includedirs {"external/", "src/"}
   filter "configurations:debug"
   defines {"DEBUG"}
   symbols "On"
@@ -21,7 +20,7 @@ workspace "fieldfusion"
 
 project "demo"
   kind "WindowedApp"
-  includedirs "/usr/include/freetype2"
+  includedirs {"external/", "src/", "/usr/include/freetype2"}
   files {"demo/**"}
   links "freetype"
   links "glfw"

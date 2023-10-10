@@ -14,9 +14,6 @@
 #define FIELDFUSION_IMPLEMENTATION
 #include <fieldfusion.hpp>
 
-using std::cout;
-using std::endl;
-
 extern const char *kvertex_shader_src;
 extern const char *kfragment_shader_src;
 constexpr const int kwindow_width = 1366;
@@ -58,7 +55,7 @@ ff::Glyphs get_variable_size_glyphs(ff::FieldFusion &fusion, ff::FontTexturePack
     float y0 = kinitial_font_size;
     int size0 = kinitial_font_size;
     for (size_t i = 0; i < kline_repeat - 1; i++) {
-        ff::GlyphsCat(glyphs, fusion.PrintUnicode(fpack, ktext, 200, y0, kwhite, size0, 0));
+        ff::GlyphsCat(glyphs, fusion.PrintUnicode(fpack, ktext, {200, y0}, kwhite, size0, 0));
         size0 += kfont_size_increment;
         y0 += size0 + kline_padding;
     }
@@ -105,12 +102,16 @@ int main() {
     auto &italic_font = fusion.fonts_.at(italic_font_handle);
 
     auto glyphs = get_variable_size_glyphs(fusion, regular_font);
-    ff::GlyphsCat(
-        glyphs, fusion.PrintUnicode(regular_font, details, 0, kwindow_height * 0.5f, kwhite, 14.0f, 1, 1, 0));
-    ff::GlyphsCat(glyphs, fusion.PrintUnicode(regular_font, kunicode_text, kwindow_width * 0.5f,
-                                              kwindow_height * 0.5f, 0xffda09ff, 14.0f));
+    ff::GlyphsCat(glyphs,
+                  fusion.PrintUnicode(regular_font, details, {0, kwindow_height * 0.5f}, kwhite, 14.0f));
+    ff::GlyphsCat(glyphs,
+                  fusion.PrintUnicode(regular_font, kunicode_text,
+                                      {kwindow_width * 0.5f, kwindow_height * 0.5f}, 0xffda09ff, 14.0f));
     auto vertical_line =
-        fusion.PrintUnicode(italic_font, U"Field Fusion", 100, 14.0f, 0xff0000ff, 20.0f, 0, 1, 1).value();
+        fusion
+            .PrintUnicode(italic_font, U"Field Fusion", {100, 14.0f}, 0xff0000ff, 20.0f,
+                          ff::PrintOptions::kPrintVertically | ff::PrintOptions::kEnableKerning)
+            .value();
 
     float projection[4][4];
     ff::Ortho(0, kwindow_width, kwindow_height, 0, -1.0f, 1.0f, projection);

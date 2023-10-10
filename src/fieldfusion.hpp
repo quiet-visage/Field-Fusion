@@ -157,12 +157,43 @@ struct Atlas {
     int padding;
 };
 
+struct Position {
+    float x;
+    float y;
+};
+
+struct Rectangle {
+    float x;
+    float y;
+    float width;
+    float height;
+};
+
 struct Glyph {
+    struct Characteristics {
+        /**
+         * Y offset (for e.g. subscripts and superscripts).
+         */
+        float offset;
+
+        /**
+         * The amount of "lean" on the character. Positive leans to the right,
+         * negative leans to the left. Skew can create /italics/ effect without
+         * loading a separate font atlas.
+         */
+        float skew;
+
+        /**
+         * The "boldness" of the character. 0.5 is normal strength, lower is thinner
+         * and higher is thicker. Strength can create *bold* effect without loading
+         * a separate font atlas.
+         */
+        float strength;
+    };
     /**
      * X and Y coordinates in in the projection coordinates.
      */
-    float x;
-    float y;
+    Position position;
 
     /**
      * The color of the character in 0xRRGGBBAA format.
@@ -178,32 +209,21 @@ struct Glyph {
      * Font size to use for rendering of this character.
      */
     float size;
-
-    /**
-     * Y offset (for e.g. subscripts and superscripts).
-     */
-    float offset;
-
-    /**
-     * The amount of "lean" on the character. Positive leans to the right,
-     * negative leans to the left. Skew can create /italics/ effect without
-     * loading a separate font atlas.
-     */
-    float skew;
-
-    /**
-     * The "boldness" of the character. 0.5 is normal strength, lower is thinner
-     * and higher is thicker. Strength can create *bold* effect without loading
-     * a separate font atlas.
-     */
-    float strength;
+    Characteristics characteristics;
 };
+
 struct FontTexturePack {
     Font font;
     Atlas atlas;
 };
 
 using Glyphs = std::vector<Glyph>;
+
+enum PrintOptions : int {
+    kHandleNewlines = 0x1,
+    kEnableKerning = 0x2,
+    kPrintVertically = 0x4,
+};
 
 struct FieldFusion {
     struct Uniforms {
@@ -246,11 +266,12 @@ struct FieldFusion {
     Result<void> GenGlyphs(FontTexturePack &, const std::vector<int32_t> &codepoints) noexcept;
     Result<void> Draw(FontTexturePack &, Glyphs, const float *projection) noexcept;
     [[nodiscard]] Result<Glyphs> PrintUnicode(FontTexturePack &, const std::u32string_view buffer,
-                                              const float x, const float y, const long color,
-                                              const float size, const bool handle_newlines = true,
-                                              const bool enable_kerning = true,
-                                              const bool print_vertically = false, const float offset = 0.0f,
-                                              const float skew = 0.0f, const float strength = 0.50f) noexcept;
+                                              const Position position, const long color, const float size,
+                                              const int print_options = kEnableKerning | kHandleNewlines,
+                                              const Glyph::Characteristics = {0.0f, 0.0f, 0.5f}) noexcept;
+    [[nodiscard]] Result<Rectangle> Measure(FontTexturePack &, const std::u32string_view &buffer,
+                                            const float size, const Position = {0},
+                                            const bool with_kerning = true);
     void Destroy() noexcept;
 };
 
@@ -298,9 +319,9 @@ void main() {
     sigDist *= dot(msdfUnit, 0.5/fwidth(coords));
     float opacity = clamp(sigDist + 0.5, 0.0, 1.0);
     color = mix(vec4(0.0, 0.0, 0.0, 0.0), text_color, opacity);
-    color.r = srgb_from_linear(color.x); 
-    color.g = srgb_from_linear(color.y); 
-    color.b = srgb_from_linear(color.z); 
+    color.r = srgb_from_linear(color.r); 
+    color.g = srgb_from_linear(color.g); 
+    color.b = srgb_from_linear(color.b); 
 })SHADER";
 
 static const char *kfont_geometry = R"SHADER(
@@ -1718,28 +1739,35 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
     glBufferData(GL_ARRAY_BUFFER, glyphs.size() * sizeof(Glyph), &glyphs[0], GL_DYNAMIC_DRAW);
 
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Glyph), (void *)offsetof(Glyph, x));
-
     glEnableVertexAttribArray(1);
-    glVertexAttribIPointer(1, 4, GL_UNSIGNED_BYTE, sizeof(Glyph), (void *)offsetof(Glyph, color));
-
     glEnableVertexAttribArray(2);
-    glVertexAttribIPointer(2, 1, GL_INT, sizeof(Glyph), (void *)offsetof(Glyph, codepoint));
-
     glEnableVertexAttribArray(3);
-    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(Glyph), (void *)offsetof(Glyph, size));
-
     glEnableVertexAttribArray(4);
-    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(Glyph), (void *)offsetof(Glyph, offset));
-
     glEnableVertexAttribArray(5);
-    glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, sizeof(Glyph), (void *)offsetof(Glyph, skew));
-
     glEnableVertexAttribArray(6);
-    glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, sizeof(Glyph), (void *)offsetof(Glyph, strength));
+
+    auto position_offset = (void *)offsetof(Glyph, position.x);
+    auto color_offset = (void *)offsetof(Glyph, color);
+    auto codepoint_offset = (void *)offsetof(Glyph, codepoint);
+    auto size_offset = (void *)offsetof(Glyph, size);
+    auto offset_offset = (void *)offsetof(Glyph, characteristics.offset);
+    auto skew_offset = (void *)offsetof(Glyph, characteristics.skew);
+    auto strength_offset = (void *)offsetof(Glyph, characteristics.strength);
+
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Glyph), position_offset);
+    glVertexAttribIPointer(1, 4, GL_UNSIGNED_BYTE, sizeof(Glyph), color_offset);
+    glVertexAttribIPointer(2, 1, GL_INT, sizeof(Glyph), codepoint_offset);
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(Glyph), size_offset);
+    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(Glyph), offset_offset);
+    glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, sizeof(Glyph), skew_offset);
+    glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, sizeof(Glyph), strength_offset);
+
+    /* Enable gamma correction if user didn't enabled it */
+    auto is_srgb_enabled = glIsEnabled(GL_FRAMEBUFFER_SRGB);
+    bool srgb_enabled_by_fn = !is_srgb_enabled;
+    if (!is_srgb_enabled) glEnable(GL_FRAMEBUFFER_SRGB);
 
     glUseProgram(render_shader_);
-
     /* Bind atlas texture and index buffer. */
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, fpack.atlas.atlas_texture);
@@ -1765,8 +1793,10 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, 0);
-
     glUseProgram(0);
+
+    /* if the user didn't enabled it, disable it */
+    if (srgb_enabled_by_fn) glDisable(GL_FRAMEBUFFER_SRGB);
 
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
@@ -1783,34 +1813,27 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
     return {};
 }
 
-[[nodiscard]] Result<Glyphs> FieldFusion::PrintUnicode(FontTexturePack &fpack,
-                                                       const std::u32string_view buffer, const float x,
-                                                       const float y, const long color, const float size,
-                                                       const bool handle_newlines, const bool enable_kerning,
-                                                       const bool print_vertically, const float offset,
-                                                       const float skew, const float strength) noexcept {
+[[nodiscard]] Result<Glyphs> FieldFusion::PrintUnicode(
+    FontTexturePack &fpack, const std::u32string_view buffer, const Position position, const long color,
+    const float size, const int print_options, const Glyph::Characteristics characteristics) noexcept {
     std::vector<Glyph> result;
-    float x0 = x;
-    float y0 = y;
+    auto pos0 = position;
     for (size_t i = 0; i < buffer.size(); i++) {
         const auto &codepoint = (int32_t)buffer.at(i);
 
-        if (handle_newlines and (codepoint == U'\n' || codepoint == U'\r')) {
-            y0 += size;
-            x0 = x;
+        if ((print_options & kHandleNewlines) and (codepoint == U'\n' || codepoint == U'\r')) {
+            pos0.y += size;
+            pos0.x = position.x;
             continue;
         }
 
         result.push_back({});
         auto &element = result.at(result.size() - 1);
-        element.x = x0;
-        element.y = y0;
+        element.position = pos0;
         element.color = color;
         element.codepoint = codepoint;
         element.size = size;
-        element.offset = offset;
-        element.skew = skew;
-        element.strength = strength;
+        element.characteristics = characteristics;
 
         auto idx = fpack.font.character_index.at(codepoint);
         if (not idx.has_value()) {
@@ -1821,20 +1844,67 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
         }
 
         FT_Vector kerning{0};
-        const bool should_get_kerning = enable_kerning and FT_HAS_KERNING(fpack.font.face) and (i > 0);
+        const bool should_get_kerning =
+            (print_options & kEnableKerning) and FT_HAS_KERNING(fpack.font.face) and (i > 0);
         if (should_get_kerning) {
             const auto &previous_character = buffer.at(i - 1);
             FT_Get_Kerning(fpack.font.face, FT_Get_Char_Index(fpack.font.face, previous_character),
                            FT_Get_Char_Index(fpack.font.face, codepoint), FT_KERNING_UNSCALED, &kerning);
         }
 
-        if (not print_vertically)
-            x0 += (idx.value().get().advance[0] + kerning.x) * (size * dpi_[0] / 72.0f) /
-                  fpack.font.face->units_per_EM;
+        if (not(print_options & kPrintVertically))
+            pos0.x += (idx.value().get().advance[0] + kerning.x) * (size * dpi_[0] / 72.0f) /
+                      fpack.font.face->units_per_EM;
         else
-            y0 += (idx.value().get().advance[1] + kerning.y) * (size * dpi_[0] / 72.0f) /
-                  fpack.font.face->units_per_EM;
+            pos0.y += (idx.value().get().advance[1] + kerning.y) * (size * dpi_[0] / 72.0f) /
+                      fpack.font.face->units_per_EM;
     }
+    return result;
+}
+
+[[nodiscard]] Result<Rectangle> FieldFusion::Measure(FontTexturePack &fpack,
+                                                     const std::u32string_view &buffer, const float size,
+                                                     const Position pos, const bool with_kerning) {
+    Rectangle result{pos.x, pos.y, 0, 0};
+    Glyphs glyphs;
+    auto tmp_width{0.0f};
+
+    for (size_t i = 0; i < buffer.size(); i++) {
+        auto &codepoint = buffer.at(i);
+
+        auto idx = fpack.font.character_index.at(codepoint);
+        if (not idx.has_value()) {
+            auto gen_status = GenGlyphs(fpack, {codepoint});
+            if (not gen_status) return gen_status.error_;
+            idx = fpack.font.character_index.at(codepoint);
+            assert(idx.has_value());
+        }
+
+        FT_Vector kerning{0};
+        const bool should_get_kerning = with_kerning and FT_HAS_KERNING(fpack.font.face) and (i > 0);
+        if (should_get_kerning) {
+            const auto &previous_character = buffer.at(i - 1);
+            FT_Get_Kerning(fpack.font.face, FT_Get_Char_Index(fpack.font.face, previous_character),
+                           FT_Get_Char_Index(fpack.font.face, codepoint), FT_KERNING_UNSCALED, &kerning);
+        }
+
+        if (i == 0) {
+            result.height += (idx.value().get().advance[1] + kerning.y) * (size * dpi_[1] / 72.0f) /
+                             fpack.font.face->units_per_EM;
+        } else if (codepoint == U'\n' or codepoint == U'\r') {
+            result.height += (idx.value().get().advance[1] + kerning.y) * (size * dpi_[1] / 72.0f) /
+                             fpack.font.face->units_per_EM;
+            result.width = std::max(result.width, tmp_width);
+            tmp_width = 0.0f;
+            continue;
+        }
+
+        tmp_width += (idx.value().get().advance[0] + kerning.x) * (size * dpi_[0] / 72.0f) /
+                     fpack.font.face->units_per_EM;
+    }
+
+    result.width = std::max(result.width, tmp_width);
+
     return result;
 }
 
