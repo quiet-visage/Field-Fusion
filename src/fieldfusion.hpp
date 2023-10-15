@@ -83,10 +83,10 @@ struct MapItem {
 struct Map {
     using ItemRef = std::reference_wrapper<MapItem>;
     std::array<MapItem, 0xff> extended_ascii_;
-    std::unordered_map<int32_t, MapItem> codepoint_map_;
+    std::unordered_map<char32_t, MapItem> codepoint_map_;
 
-    std::optional<ItemRef> at(int32_t codepoint) noexcept;
-    ItemRef insert(const int32_t codepoint) noexcept;
+    std::optional<ItemRef> at(char32_t codepoint) noexcept;
+    ItemRef insert(const char32_t codepoint) noexcept;
 };
 
 struct Font {
@@ -199,7 +199,7 @@ struct Glyph {
     /**
      * Unicode code point of the character.
      */
-    int32_t codepoint;
+    char32_t codepoint;
 
     /**
      * Font size to use for rendering of this character.
@@ -265,7 +265,7 @@ struct FieldFusion {
     Result<void> RemoveFont(const Handle) noexcept;
     Result<void> GenExtendedAscii(FontTexturePack &) noexcept;
     Result<void> GenGlyphs(FontTexturePack &,
-                           const std::vector<int32_t> &codepoints) noexcept;
+                           const std::vector<char32_t> &codepoints) noexcept;
     Result<void> Draw(FontTexturePack &, Glyphs, const float *projection) noexcept;
     [[nodiscard]] Result<Glyphs> PrintUnicode(
         FontTexturePack &, const std::u32string_view buffer, const Position position,
@@ -942,18 +942,22 @@ struct GlyphLenCtx {
 };
 
 int AddContourSize(const FT_Vector *to, void *user) {
+    (void)to;
     struct GlyphLenCtx *ctx = (struct GlyphLenCtx *)user;
     ctx->data_size += 1;
     ctx->meta_size += 2; /* winding + nsegments */
     return 0;
 }
 int AddLinearSize(const FT_Vector *to, void *user) {
+    (void)to;
     struct GlyphLenCtx *ctx = (struct GlyphLenCtx *)user;
     ctx->data_size += 1;
     ctx->meta_size += 2; /* color + npoints */
     return 0;
 }
 int AddQuadSize(const FT_Vector *control, const FT_Vector *to, void *user) {
+    (void)control;
+    (void)to;
     struct GlyphLenCtx *ctx = (struct GlyphLenCtx *)user;
     ctx->data_size += 2;
     ctx->meta_size += 2; /* color + npoints */
@@ -961,6 +965,10 @@ int AddQuadSize(const FT_Vector *control, const FT_Vector *to, void *user) {
 }
 int AddCubicSize(const FT_Vector *control1, const FT_Vector *control2,
                  const FT_Vector *to, void *s) {
+    (void)control1;
+    (void)control2;
+    (void)to;
+    (void)s;
     fprintf(stderr, "Cubic segments not supported\n");
     return -1;
 }
@@ -1461,7 +1469,7 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
 
 [[nodiscard]] Result<void> FieldFusion::GenExtendedAscii(
     FontTexturePack &fpack) noexcept {
-    std::vector<int32_t> codepoints(0xE0);
+    std::vector<char32_t> codepoints(0xE0);
     std::iota(codepoints.begin(), codepoints.end(), 0);
     return GenGlyphs(fpack, codepoints);
 }
@@ -1485,7 +1493,7 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
 }
 
 [[nodiscard]] Result<void> FieldFusion::GenGlyphs(
-    FontTexturePack &fpack, const std::vector<int32_t> &codepoints) noexcept {
+    FontTexturePack &fpack, const std::vector<char32_t> &codepoints) noexcept {
     GLint original_viewport[4];
     glGetIntegerv(GL_VIEWPORT, original_viewport);
     int nrender = codepoints.size();
@@ -1762,7 +1770,7 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
 
 [[nodiscard]] Result<void> FieldFusion::Draw(FontTexturePack &fpack, Glyphs glyphs,
                                              const float *projection) noexcept {
-    for (int i = 0; i < glyphs.size(); ++i) {
+    for (size_t i = 0; i < glyphs.size(); ++i) {
         auto e = fpack.font.character_index.at(glyphs.at(i).codepoint);
         if (not e) return Error::GlyphGenerationFail;
         glyphs.at(i).codepoint = e.value().get().codepoint_index;
@@ -1861,17 +1869,17 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
     auto pos0 = position;
 
     for (size_t i = 0; i < buffer.size(); i++) {
-        const auto &codepoint = (int32_t)buffer.at(i);
+        const auto &codepoint = (char32_t)buffer.at(i);
 
         auto idx = fpack.font.character_index.at(codepoint);
         if (not idx.has_value()) {
-            auto gen_status = GenGlyphs(fpack, std::vector<int32_t>{codepoint});
+            auto gen_status = GenGlyphs(fpack, std::vector<char32_t>{codepoint});
             if (not gen_status) return gen_status.error_;
             idx = fpack.font.character_index.at(codepoint);
             assert(idx.has_value());
         }
 
-        FT_Vector kerning{0};
+        FT_Vector kerning{};
         const bool should_get_kerning = (print_options & kEnableKerning) and
                                         FT_HAS_KERNING(fpack.font.face) and (i > 0);
         if (should_get_kerning) {
@@ -1920,7 +1928,7 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
             assert(idx.has_value());
         }
 
-        FT_Vector kerning{0};
+        FT_Vector kerning{};
         const bool should_get_kerning =
             with_kerning and FT_HAS_KERNING(fpack.font.face) and (i > 0);
         if (should_get_kerning) {
@@ -1949,7 +1957,7 @@ void FieldFusion::Destroy() noexcept {
 }
 
 // ffmap
-std::optional<Map::ItemRef> Map::at(int32_t codepoint) noexcept {
+std::optional<Map::ItemRef> Map::at(char32_t codepoint) noexcept {
     auto within_extended_ascii_range = codepoint <= 0xE0;
     if (within_extended_ascii_range) return extended_ascii_.at(codepoint);
     const auto contains = codepoint_map_.find(codepoint) != codepoint_map_.end();
@@ -1957,7 +1965,7 @@ std::optional<Map::ItemRef> Map::at(int32_t codepoint) noexcept {
     return codepoint_map_.at(codepoint);
 }
 
-Map::ItemRef Map::insert(const int32_t codepoint) noexcept {
+Map::ItemRef Map::insert(const char32_t codepoint) noexcept {
     auto within_extended_ascii_range = codepoint <= 0xE0;
     if (within_extended_ascii_range) {
         auto &item = extended_ascii_.at(codepoint);

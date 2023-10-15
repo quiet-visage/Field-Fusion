@@ -24,10 +24,13 @@ constexpr const float kline_padding = 2.0f;
 constexpr const int kline_repeat = 12;
 constexpr const long kwhite = 0xffffffff;
 static const std::u32string ktext = U"The quick brown fox jumps over the lazy dog";
-static const std::u32string kunicode_text = U"Быстрая бурая лиса перепрыгивает через ленивую собаку";
+static const std::u32string kunicode_text =
+    U"Быстрая бурая лиса перепрыгивает через ленивую собаку";
 constexpr const char *kwin_title = "msdf demo";
-constexpr const char *kregular_font_path{"jetbrainsfont/fonts/ttf/JetBrainsMono-Regular.ttf"};
-constexpr const char *kitalic_font_path{"jetbrainsfont/fonts/ttf/JetBrainsMono-MediumItalic.ttf"};
+constexpr const char *kregular_font_path{
+    "jetbrainsfont/fonts/ttf/JetBrainsMono-Regular.ttf"};
+constexpr const char *kitalic_font_path{
+    "jetbrainsfont/fonts/ttf/JetBrainsMono-MediumItalic.ttf"};
 
 static GLFWwindow *window;
 void InitGlCtx() {
@@ -55,40 +58,26 @@ ff::Glyphs get_variable_size_glyphs(ff::FieldFusion &fusion, ff::FontTexturePack
     float y0 = kinitial_font_size;
     int size0 = kinitial_font_size;
     for (size_t i = 0; i < kline_repeat - 1; i++) {
-        ff::GlyphsCat(glyphs, fusion.PrintUnicode(fpack, ktext, {200, y0}, kwhite, size0, 0));
+        ff::GlyphsCat(glyphs,
+                      fusion.PrintUnicode(fpack, ktext, {200, y0}, kwhite, size0, 0));
         size0 += kfont_size_increment;
         y0 += size0 + kline_padding;
     }
     return glyphs;
 }
 
-int GetShaderProgram() {
-    auto shader_program = glCreateProgram();
-
-    auto vshader = glCreateShader(GL_VERTEX_SHADER);
-    auto fshader = glCreateShader(GL_FRAGMENT_SHADER);
-
-    glShaderSource(vshader, 1, &kvertex_shader_src, 0);
-    glShaderSource(fshader, 1, &kfragment_shader_src, 0);
-    glCompileShader(vshader);
-    glCompileShader(fshader);
-    glAttachShader(shader_program, vshader);
-    glAttachShader(shader_program, fshader);
-    glLinkProgram(shader_program);
-
-    glDeleteShader(vshader);
-    glDeleteShader(fshader);
-    return shader_program;
-}
-
 int main() {
     InitGlCtx();
     std::u32string details =
-        U"Vendor : " + to_unicode(reinterpret_cast<const char *>(glGetString(GL_VENDOR))) + U"\nRenderer : " +
-        to_unicode(reinterpret_cast<const char *>(glGetString(GL_RENDERER))) + U"\nVersion : " +
+        U"Vendor : " +
+        to_unicode(reinterpret_cast<const char *>(glGetString(GL_VENDOR))) +
+        U"\nRenderer : " +
+        to_unicode(reinterpret_cast<const char *>(glGetString(GL_RENDERER))) +
+        U"\nVersion : " +
         to_unicode(reinterpret_cast<const char *>(glGetString(GL_VERSION))) +
         U"\nShader Language Version : " +
-        to_unicode(reinterpret_cast<const char *>(glGetString(GL_SHADING_LANGUAGE_VERSION)));
+        to_unicode(
+            reinterpret_cast<const char *>(glGetString(GL_SHADING_LANGUAGE_VERSION)));
 
     auto fusion = ff::FieldFusion();
     auto stat = fusion.Init("330");
@@ -102,21 +91,21 @@ int main() {
     auto &italic_font = fusion.fonts_.at(italic_font_handle);
 
     auto glyphs = get_variable_size_glyphs(fusion, regular_font);
-    ff::GlyphsCat(glyphs,
-                  fusion.PrintUnicode(regular_font, details, {0, kwindow_height * 0.5f}, kwhite, 14.0f));
+    ff::GlyphsCat(glyphs, fusion.PrintUnicode(regular_font, details,
+                                              {0, kwindow_height * 0.5f}, kwhite, 14.0f));
     ff::GlyphsCat(glyphs,
                   fusion.PrintUnicode(regular_font, kunicode_text,
-                                      {kwindow_width * 0.5f, kwindow_height * 0.5f}, 0xffda09ff, 14.0f));
+                                      {kwindow_width * 0.5f, kwindow_height * 0.5f},
+                                      0xffda09ff, 14.0f));
     auto vertical_line =
         fusion
-            .PrintUnicode(italic_font, U"Field Fusion", {100, 14.0f}, 0xff0000ff, 20.0f,
-                          ff::PrintOptions::kPrintVertically | ff::PrintOptions::kEnableKerning)
+            .PrintUnicode(
+                italic_font, U"Field Fusion", {100, 14.0f}, 0xff0000ff, 20.0f,
+                ff::PrintOptions::kPrintVertically | ff::PrintOptions::kEnableKerning)
             .value();
 
     float projection[4][4];
     ff::Ortho(0, kwindow_width, kwindow_height, 0, -1.0f, 1.0f, projection);
-
-    auto shader_program = GetShaderProgram();
 
     for (; not glfwWindowShouldClose(window);) {
         glClear(GL_COLOR_BUFFER_BIT);

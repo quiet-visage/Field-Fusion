@@ -15,11 +15,13 @@ workspace "fieldfusion"
   defines {"DEBUG"}
   symbols "On"
 
+
   filter "configurations:release"
     optimize "Full"
 
 project "demo"
   kind "WindowedApp"
+  buildoptions {"-Wall", "-Wextra"}
   includedirs {"external/", "src/", "/usr/include/freetype2"}
   files {"demo/**"}
   links "freetype"
