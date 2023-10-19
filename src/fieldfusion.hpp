@@ -4,7 +4,6 @@
 
 #include <array>
 #include <exception>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -81,12 +80,11 @@ struct MapItem {
 };
 
 struct Map {
-    using ItemRef = std::reference_wrapper<MapItem>;
     std::array<MapItem, 0xff> extended_ascii_;
     std::unordered_map<char32_t, MapItem> codepoint_map_;
 
-    std::optional<ItemRef> at(char32_t codepoint) noexcept;
-    ItemRef insert(const char32_t codepoint) noexcept;
+    MapItem *at(char32_t codepoint) noexcept;
+    MapItem *insert(const char32_t codepoint) noexcept;
 };
 
 struct Font {
@@ -1537,8 +1535,8 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
         if (not res) return res.error_;
 
         auto m = fpack.font.character_index.insert(code);
-        m.get().advance[0] = (float)fpack.font.face->glyph->metrics.horiAdvance;
-        m.get().advance[1] = (float)fpack.font.face->glyph->metrics.vertAdvance;
+        m->advance[0] = (float)fpack.font.face->glyph->metrics.horiAdvance;
+        m->advance[1] = (float)fpack.font.face->glyph->metrics.vertAdvance;
 
         buffer_width =
             fpack.font.face->glyph->metrics.width / kserializer_scale + fpack.font.range;
@@ -1773,7 +1771,7 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
     for (size_t i = 0; i < glyphs.size(); ++i) {
         auto e = fpack.font.character_index.at(glyphs.at(i).codepoint);
         if (not e) return Error::GlyphGenerationFail;
-        glyphs.at(i).codepoint = e.value().get().codepoint_index;
+        glyphs.at(i).codepoint = e->codepoint_index;
     }
 
     GLuint glyph_buffer;
@@ -1872,11 +1870,11 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
         const auto &codepoint = (char32_t)buffer.at(i);
 
         auto idx = fpack.font.character_index.at(codepoint);
-        if (not idx.has_value()) {
+        if (idx == nullptr) {
             auto gen_status = GenGlyphs(fpack, std::vector<char32_t>{codepoint});
             if (not gen_status) return gen_status.error_;
             idx = fpack.font.character_index.at(codepoint);
-            assert(idx.has_value());
+            assert(idx != nullptr);
         }
 
         FT_Vector kerning{};
@@ -1899,11 +1897,11 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
         element.characteristics = characteristics;
 
         if (not(print_options & kPrintVertically))
-            pos0.x += (idx.value().get().advance[0] + kerning.x) *
-                      (size * dpi_[0] / 72.0f) / fpack.font.face->units_per_EM;
+            pos0.x += (idx->advance[0] + kerning.x) * (size * dpi_[0] / 72.0f) /
+                      fpack.font.face->units_per_EM;
         else
-            pos0.y += (idx.value().get().advance[1] + kerning.y) *
-                      (size * dpi_[0] / 72.0f) / fpack.font.face->units_per_EM;
+            pos0.y += (idx->advance[1] + kerning.y) * (size * dpi_[0] / 72.0f) /
+                      fpack.font.face->units_per_EM;
     }
 
     return result;
@@ -1921,11 +1919,11 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
         auto &codepoint = buffer.at(i);
 
         auto idx = fpack.font.character_index.at(codepoint);
-        if (not idx.has_value()) {
+        if (idx == nullptr) {
             auto gen_status = GenGlyphs(fpack, {codepoint});
             if (not gen_status) return gen_status.error_;
             idx = fpack.font.character_index.at(codepoint);
-            assert(idx.has_value());
+            assert(idx != nullptr);
         }
 
         FT_Vector kerning{};
@@ -1939,11 +1937,11 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
                            FT_KERNING_UNSCALED, &kerning);
         }
 
-        auto height = (idx.value().get().advance[1] + kerning.y) *
-                      (size * dpi_[1] / 72.0f) / fpack.font.face->units_per_EM;
+        auto height = (idx->advance[1] + kerning.y) * (size * dpi_[1] / 72.0f) /
+                      fpack.font.face->units_per_EM;
         result.height = std::max(result.height, height);
-        result.width += (idx.value().get().advance[0] + kerning.x) *
-                        (size * dpi_[0] / 72.0f) / fpack.font.face->units_per_EM;
+        result.width += (idx->advance[0] + kerning.x) * (size * dpi_[0] / 72.0f) /
+                        fpack.font.face->units_per_EM;
     }
 
     result.width = std::max(result.width, tmp_width);
@@ -1957,26 +1955,26 @@ void FieldFusion::Destroy() noexcept {
 }
 
 // ffmap
-std::optional<Map::ItemRef> Map::at(char32_t codepoint) noexcept {
+MapItem *Map::at(char32_t codepoint) noexcept {
     auto within_extended_ascii_range = codepoint <= 0xE0;
-    if (within_extended_ascii_range) return extended_ascii_.at(codepoint);
+    if (within_extended_ascii_range) return &extended_ascii_.at(codepoint);
     const auto contains = codepoint_map_.find(codepoint) != codepoint_map_.end();
-    if (not contains) return {};
-    return codepoint_map_.at(codepoint);
+    if (not contains) return {NULL};
+    return &codepoint_map_.at(codepoint);
 }
 
-Map::ItemRef Map::insert(const char32_t codepoint) noexcept {
+MapItem *Map::insert(const char32_t codepoint) noexcept {
     auto within_extended_ascii_range = codepoint <= 0xE0;
     if (within_extended_ascii_range) {
         auto &item = extended_ascii_.at(codepoint);
         item.codepoint = codepoint;
         item.codepoint_index = codepoint;
-        return item;
+        return &item;
     };
     auto &new_item = codepoint_map_[codepoint];
     new_item.codepoint = codepoint;
     new_item.codepoint_index = 0xE0 + codepoint_map_.size() - 1;
-    return std::ref(new_item);
+    return &new_item;
 }
 }  // namespace ff
 // /impl
