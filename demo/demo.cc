@@ -53,13 +53,13 @@ std::u32string to_unicode(const std::string &s) {
     return conv.from_bytes(s);
 }
 
-ff::Glyphs get_variable_size_glyphs(ff::FieldFusion &fusion, ff::FontTexturePack &fpack) {
+ff::Glyphs get_variable_size_glyphs(const ff::FontHandle font_handle) {
     ff::Glyphs glyphs;
     float y0 = kinitial_font_size;
     int size0 = kinitial_font_size;
     for (size_t i = 0; i < kline_repeat - 1; i++) {
         ff::GlyphsCat(glyphs,
-                      fusion.PrintUnicode(fpack, ktext, {200, y0}, kwhite, size0, 0));
+                      ff::PrintUnicode(font_handle, ktext, {200, y0}, kwhite, size0, 0));
         size0 += kfont_size_increment;
         y0 += size0 + kline_padding;
     }
@@ -79,29 +79,24 @@ int main() {
         to_unicode(
             reinterpret_cast<const char *>(glGetString(GL_SHADING_LANGUAGE_VERSION)));
 
-    auto fusion = ff::FieldFusion();
-    auto stat = fusion.Init("330");
+    auto stat = ff::Initialize("330");
     if (not stat) {
         std::cerr << "failed to initialize field fusion" << std::endl;
         return 1;
     }
-    auto regular_font_handle = fusion.NewFont(kregular_font_path).value();
-    auto italic_font_handle = fusion.NewFont(kitalic_font_path).value();
-    auto &regular_font = fusion.fonts_.at(regular_font_handle);
-    auto &italic_font = fusion.fonts_.at(italic_font_handle);
+    auto regular_font = ff::NewFont(kregular_font_path).value();
+    auto italic_font = ff::NewFont(kitalic_font_path).value();
 
-    auto glyphs = get_variable_size_glyphs(fusion, regular_font);
-    ff::GlyphsCat(glyphs, fusion.PrintUnicode(regular_font, details,
-                                              {0, kwindow_height * 0.5f}, kwhite, 14.0f));
-    ff::GlyphsCat(glyphs,
-                  fusion.PrintUnicode(regular_font, kunicode_text,
-                                      {kwindow_width * 0.5f, kwindow_height * 0.5f},
-                                      0xffda09ff, 14.0f));
+    auto glyphs = get_variable_size_glyphs(regular_font);
+    ff::GlyphsCat(glyphs, ff::PrintUnicode(regular_font, details,
+                                           {0, kwindow_height * 0.5f}, kwhite, 14.0f));
+    ff::GlyphsCat(glyphs, ff::PrintUnicode(regular_font, kunicode_text,
+                                           {kwindow_width * 0.5f, kwindow_height * 0.5f},
+                                           0xffda09ff, 14.0f));
     auto vertical_line =
-        fusion
-            .PrintUnicode(
-                italic_font, U"Field Fusion", {100, 14.0f}, 0xff0000ff, 20.0f,
-                ff::PrintOptions::kPrintVertically | ff::PrintOptions::kEnableKerning)
+        ff::PrintUnicode(
+            italic_font, U"Field Fusion", {100, 14.0f}, 0xff0000ff, 20.0f,
+            ff::PrintOptions::kPrintVertically | ff::PrintOptions::kEnableKerning)
             .value();
 
     float projection[4][4];
@@ -109,13 +104,13 @@ int main() {
 
     for (; not glfwWindowShouldClose(window);) {
         glClear(GL_COLOR_BUFFER_BIT);
-        { (void)fusion.Draw(regular_font, glyphs, (float *)projection); }
-        { (void)fusion.Draw(italic_font, vertical_line, (float *)projection); }
+        { (void)ff::Draw(regular_font, glyphs, (float *)projection); }
+        { (void)ff::Draw(italic_font, vertical_line, (float *)projection); }
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
-    fusion.Destroy();
+    ff::Terminate();
     DestroyGlCtx();
 }
 
