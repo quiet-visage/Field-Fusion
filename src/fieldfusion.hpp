@@ -3,6 +3,7 @@
 #include <ft2build.h>
 
 #include <array>
+#include <cstdint>
 #include <exception>
 #include <string>
 #include <unordered_map>
@@ -192,7 +193,7 @@ struct Glyph {
     /**
      * The color of the character in 0xRRGGBBAA format.
      */
-    long color;
+    uint32_t color;
 
     /**
      * Unicode code point of the character.
@@ -235,7 +236,7 @@ Result<void> GenGlyphs(const FontHandle,
 Result<void> Draw(const FontHandle, Glyphs, const float *projection) noexcept;
 [[nodiscard]] Result<Glyphs> PrintUnicode(
     const FontHandle, const std::u32string_view buffer, const Position position,
-    const long color, const float size, const int print_options = kEnableKerning,
+    const uint32_t color, const float size, const int print_options = kEnableKerning,
     const Glyph::Characteristics = {0.0f, 0.0f, 0.5f}) noexcept;
 [[nodiscard]] Result<Dimensions> Measure(const FontHandle,
                                          const std::u32string_view &buffer,
@@ -1859,8 +1860,8 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
 
 [[nodiscard]] Result<Glyphs> PrintUnicode(
     const FontHandle font_handle, const std::u32string_view buffer,
-    const Position position, const long color, const float size, const int print_options,
-    const Glyph::Characteristics characteristics) noexcept {
+    const Position position, const uint32_t color, const float size,
+    const int print_options, const Glyph::Characteristics characteristics) noexcept {
     auto &fpack = _fonts.at(font_handle);
     std::vector<Glyph> result;
     auto pos0 = position;
