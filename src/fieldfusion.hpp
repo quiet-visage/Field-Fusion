@@ -25,6 +25,7 @@ using FontHandle = size_t;
 struct BadResultDereference : std::exception {
     const char *what() { return "Tried dereferencing result when an error occured."; }
 };
+
 enum class Error {
     Ok = 0,
     FtInitializationFail,
@@ -44,6 +45,7 @@ enum class Error {
     BadIndexMapAccess,
     OutOfBounds,
 };
+
 template <typename T>
 struct Result {
     Error error_{0};
@@ -217,6 +219,12 @@ struct Dimensions {
     float height;
 };
 
+struct Typography {
+    ff::FontHandle font;
+    float size;
+    uint32_t color;
+};
+
 using Glyphs = std::vector<Glyph>;
 
 enum PrintOptions : int {
@@ -235,8 +243,8 @@ Result<void> GenGlyphs(const FontHandle,
                        const std::vector<char32_t> &codepoints) noexcept;
 Result<void> Draw(const FontHandle, Glyphs, const float *projection) noexcept;
 [[nodiscard]] Result<Glyphs> PrintUnicode(
-    const FontHandle, const std::u32string_view buffer, const Position position,
-    const uint32_t color, const float size, const int print_options = kEnableKerning,
+    const Typography, const std::u32string_view buffer, const Position position,
+    const int print_options = kEnableKerning,
     const Glyph::Characteristics = {0.0f, 0.0f, 0.5f}) noexcept;
 [[nodiscard]] Result<Dimensions> Measure(const FontHandle,
                                          const std::u32string_view &buffer,
@@ -251,12 +259,12 @@ inline void GlyphsCat(Glyphs &to, Glyphs &from) {
 }
 }  // namespace ff
 
-// impl
 #ifdef FIELDFUSION_IMPLEMENTATION
 #include <algorithm>
 #include <cassert>
 #include <memory>
 #include <numeric>
+
 namespace ff {
 static const char *kfont_fragment = R"SHADER(
 precision highp float;
@@ -1859,10 +1867,10 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
 }
 
 [[nodiscard]] Result<Glyphs> PrintUnicode(
-    const FontHandle font_handle, const std::u32string_view buffer,
-    const Position position, const uint32_t color, const float size,
-    const int print_options, const Glyph::Characteristics characteristics) noexcept {
-    auto &fpack = _fonts.at(font_handle);
+    const Typography typography, const std::u32string_view buffer,
+    const Position position, const int print_options,
+    const Glyph::Characteristics characteristics) noexcept {
+    auto &fpack = _fonts.at(typography.font);
     std::vector<Glyph> result;
     auto pos0 = position;
 
@@ -1871,7 +1879,8 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
 
         auto idx = fpack.font.character_index.at(codepoint);
         if (idx == nullptr) {
-            auto gen_status = GenGlyphs(font_handle, std::vector<char32_t>{codepoint});
+            auto gen_status =
+                GenGlyphs(typography.font, std::vector<char32_t>{codepoint});
             if (not gen_status) return gen_status.error_;
             idx = fpack.font.character_index.at(codepoint);
             assert(idx != nullptr);
@@ -1892,18 +1901,18 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
         {
             auto &new_glyph = result.at(result.size() - 1);
             new_glyph.position = pos0;
-            new_glyph.color = color;
+            new_glyph.color = typography.color;
             new_glyph.codepoint = codepoint;
-            new_glyph.size = size;
+            new_glyph.size = typography.size;
             new_glyph.characteristics = characteristics;
         }
 
         if (not(print_options & kPrintVertically))
-            pos0.x += (idx->advance[0] + kerning.x) * (size * _dpi[0] / 72.0f) /
-                      fpack.font.face->units_per_EM;
+            pos0.x += (idx->advance[0] + kerning.x) *
+                      (typography.size * _dpi[0] / 72.0f) / fpack.font.face->units_per_EM;
         else
-            pos0.y += (idx->advance[1] + kerning.y) * (size * _dpi[0] / 72.0f) /
-                      fpack.font.face->units_per_EM;
+            pos0.y += (idx->advance[1] + kerning.y) *
+                      (typography.size * _dpi[0] / 72.0f) / fpack.font.face->units_per_EM;
     }
 
     return result;

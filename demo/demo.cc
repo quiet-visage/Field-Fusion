@@ -58,8 +58,8 @@ ff::Glyphs get_variable_size_glyphs(const ff::FontHandle font_handle) {
     float y0 = kinitial_font_size;
     int size0 = kinitial_font_size;
     for (size_t i = 0; i < kline_repeat - 1; i++) {
-        ff::GlyphsCat(glyphs,
-                      ff::PrintUnicode(font_handle, ktext, {200, y0}, kwhite, size0, 0));
+        ff::GlyphsCat(glyphs, ff::PrintUnicode({font_handle, (float)size0, kwhite}, ktext,
+                                               {200, y0}, 0));
         size0 += kfont_size_increment;
         y0 += size0 + kline_padding;
     }
@@ -88,14 +88,14 @@ int main() {
     auto italic_font = ff::NewFont(kitalic_font_path).value();
 
     auto glyphs = get_variable_size_glyphs(regular_font);
-    ff::GlyphsCat(glyphs, ff::PrintUnicode(regular_font, details,
-                                           {0, kwindow_height * 0.5f}, kwhite, 14.0f));
-    ff::GlyphsCat(glyphs, ff::PrintUnicode(regular_font, kunicode_text,
-                                           {kwindow_width * 0.5f, kwindow_height * 0.5f},
-                                           0xffda09ff, 14.0f));
+    ff::GlyphsCat(glyphs, ff::PrintUnicode({regular_font, 14, kwhite}, details,
+                                           {0, kwindow_height * 0.5f}));
+    ff::GlyphsCat(glyphs,
+                  ff::PrintUnicode({regular_font, 14.0f, 0xffda09ff}, kunicode_text,
+                                   {kwindow_width * 0.5f, kwindow_height * 0.5f}));
     auto vertical_line =
         ff::PrintUnicode(
-            italic_font, U"Field Fusion", {100, 14.0f}, 0xff0000ff, 20.0f,
+            {italic_font, 20.0f, 0xff0000ff}, U"Field Fusion", {100, 14.0f},
             ff::PrintOptions::kPrintVertically | ff::PrintOptions::kEnableKerning)
             .value();
 
