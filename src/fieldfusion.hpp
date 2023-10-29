@@ -1872,7 +1872,7 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
     const Glyph::Characteristics characteristics) noexcept {
     auto &fpack = _fonts.at(typography.font);
     std::vector<Glyph> result;
-    auto pos0 = position;
+    auto pos0 = Position{position.x, position.y + typography.size};
 
     for (size_t i = 0; i < buffer.size(); i++) {
         const auto &codepoint = (char32_t)buffer.at(i);
