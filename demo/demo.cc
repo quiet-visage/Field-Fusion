@@ -58,8 +58,9 @@ ff::Glyphs get_variable_size_glyphs(const ff::FontHandle font_handle) {
     float y0 = kinitial_font_size;
     int size0 = kinitial_font_size;
     for (size_t i = 0; i < kline_repeat - 1; i++) {
-        ff::GlyphsCat(glyphs, ff::PrintUnicode({font_handle, (float)size0, kwhite}, ktext,
-                                               {200, y0}, 0));
+        auto tmp_glyphs =
+            ff::PrintUnicode({font_handle, (float)size0, kwhite}, ktext, {200, y0}, 0);
+        ff::GlyphsCat(glyphs, tmp_glyphs);
         size0 += kfont_size_increment;
         y0 += size0 + kline_padding;
     }
@@ -79,25 +80,21 @@ int main() {
         to_unicode(
             reinterpret_cast<const char *>(glGetString(GL_SHADING_LANGUAGE_VERSION)));
 
-    auto stat = ff::Initialize("330");
-    if (not stat) {
-        std::cerr << "failed to initialize field fusion" << std::endl;
-        return 1;
-    }
-    auto regular_font = ff::NewFont(kregular_font_path).value();
-    auto italic_font = ff::NewFont(kitalic_font_path).value();
+    ff::Initialize("330");
+    auto regular_font = ff::NewFont(kregular_font_path);
+    auto italic_font = ff::NewFont(kitalic_font_path);
 
     auto glyphs = get_variable_size_glyphs(regular_font);
-    ff::GlyphsCat(glyphs, ff::PrintUnicode({regular_font, 14, kwhite}, details,
-                                           {0, kwindow_height * 0.5f}));
-    ff::GlyphsCat(glyphs,
-                  ff::PrintUnicode({regular_font, 14.0f, 0xffda09ff}, kunicode_text,
-                                   {kwindow_width * 0.5f, kwindow_height * 0.5f}));
-    auto vertical_line =
-        ff::PrintUnicode(
-            {italic_font, 20.0f, 0xff0000ff}, U"Field Fusion", {100, 14.0f},
-            ff::PrintOptions::kPrintVertically | ff::PrintOptions::kEnableKerning)
-            .value();
+    auto detail_glyphs =
+        ff::PrintUnicode({regular_font, 14, kwhite}, details, {0, kwindow_height * 0.5f});
+    ff::GlyphsCat(glyphs, detail_glyphs);
+    auto unicode_text_glyphs =
+        ff::PrintUnicode({regular_font, 14.0f, 0xffda09ff}, kunicode_text,
+                         {kwindow_width * 0.5f, kwindow_height * 0.5f});
+    ff::GlyphsCat(glyphs, unicode_text_glyphs);
+    auto vertical_line = ff::PrintUnicode(
+        {italic_font, 20.0f, 0xff0000ff}, U"Field Fusion", {100, 14.0f},
+        ff::PrintOptions::kPrintVertically | ff::PrintOptions::kEnableKerning);
 
     float projection[4][4];
     ff::Ortho(0, kwindow_width, kwindow_height, 0, -1.0f, 1.0f, projection);
