@@ -186,7 +186,7 @@ FontHandle NewFont(const char *path, const float scale = 4.0f, const float range
 void RemoveFont(const FontHandle) noexcept;
 void GenExtendedAscii(const FontHandle) noexcept;
 void GenGlyphs(const FontHandle, const std::vector<char32_t> &codepoints) noexcept;
-void Draw(const FontHandle, Glyphs, const float *projection) noexcept;
+void Draw(const FontHandle, const Glyphs &, const float *projection) noexcept;
 [[nodiscard]] Glyphs PrintUnicode(const Typography, const std::u32string_view buffer,
                                   const Position position,
                                   const int print_options = kEnableKerning,
@@ -1689,13 +1689,9 @@ void GenGlyphs(const FontHandle font_handle,
                original_viewport[3]);
 }
 
-void Draw(const FontHandle font_handle, Glyphs glyphs, const float *projection) noexcept {
+void Draw(const FontHandle font_handle, const Glyphs &glyphs,
+          const float *projection) noexcept {
     auto &fpack = _fonts.at(font_handle);
-    for (size_t i = 0; i < glyphs.size(); ++i) {
-        auto e = fpack.font.character_index.at(glyphs.at(i).codepoint);
-        assert("Glyph generation failed" && e != nullptr);
-        glyphs.at(i).codepoint = e->codepoint_index;
-    }
 
     GLuint glyph_buffer;
     GLuint vao;
@@ -1815,7 +1811,7 @@ void Draw(const FontHandle font_handle, Glyphs glyphs, const float *projection) 
             auto &new_glyph = result.at(result.size() - 1);
             new_glyph.position = pos0;
             new_glyph.color = typography.color;
-            new_glyph.codepoint = codepoint;
+            new_glyph.codepoint = idx->codepoint_index;
             new_glyph.size = typography.size;
             new_glyph.characteristics = characteristics;
         }
