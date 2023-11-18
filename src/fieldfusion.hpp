@@ -1782,9 +1782,9 @@ void Draw(const FontHandle font_handle, const Glyphs &glyphs,
                                   const Position position, const int print_options,
                                   const Glyph::Characteristics characteristics) noexcept {
     auto &fpack = _fonts.at(typography.font);
-    std::vector<Glyph> result;
     auto pos0 = Position{position.x, position.y + typography.size};
 
+    std::vector<Glyph> result(buffer.size());
     for (size_t i = 0; i < buffer.size(); i++) {
         const auto &codepoint = (char32_t)buffer.at(i);
 
@@ -1807,14 +1807,12 @@ void Draw(const FontHandle font_handle, const Glyphs &glyphs,
         }
 
         result.push_back({});
-        {
-            auto &new_glyph = result.at(result.size() - 1);
-            new_glyph.position = pos0;
-            new_glyph.color = typography.color;
-            new_glyph.codepoint = idx->codepoint_index;
-            new_glyph.size = typography.size;
-            new_glyph.characteristics = characteristics;
-        }
+        auto &new_glyph = result.back();
+        new_glyph.position = pos0;
+        new_glyph.color = typography.color;
+        new_glyph.codepoint = idx->codepoint_index;
+        new_glyph.size = typography.size;
+        new_glyph.characteristics = characteristics;
 
         if (not(print_options & kPrintVertically))
             pos0.x += (idx->advance[0] + kerning.x) *

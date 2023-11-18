@@ -69,32 +69,35 @@ ff::Glyphs get_variable_size_glyphs(const ff::FontHandle font_handle) {
 
 int main() {
     InitGlCtx();
-    std::u32string details =
-        U"Vendor : " +
-        to_unicode(reinterpret_cast<const char *>(glGetString(GL_VENDOR))) +
-        U"\nRenderer : " +
-        to_unicode(reinterpret_cast<const char *>(glGetString(GL_RENDERER))) +
-        U"\nVersion : " +
-        to_unicode(reinterpret_cast<const char *>(glGetString(GL_VERSION))) +
-        U"\nShader Language Version : " +
-        to_unicode(
-            reinterpret_cast<const char *>(glGetString(GL_SHADING_LANGUAGE_VERSION)));
+    // std::u32string details =
+    //     U"Vendor : " +
+    //     to_unicode(reinterpret_cast<const char *>(glGetString(GL_VENDOR))) +
+    //     U"\nRenderer : " +
+    //     to_unicode(reinterpret_cast<const char *>(glGetString(GL_RENDERER))) +
+    //     U"\nVersion : " +
+    //     to_unicode(reinterpret_cast<const char *>(glGetString(GL_VERSION))) +
+    //     U"\nShader Language Version : " +
+    //     to_unicode(
+    //         reinterpret_cast<const char *>(glGetString(GL_SHADING_LANGUAGE_VERSION)));
 
     ff::Initialize("330");
     auto regular_font = ff::NewFont(kregular_font_path);
     auto italic_font = ff::NewFont(kitalic_font_path);
 
-    auto glyphs = get_variable_size_glyphs(regular_font);
-    auto detail_glyphs =
-        ff::PrintUnicode({regular_font, 14, kwhite}, details, {0, kwindow_height * 0.5f});
-    ff::GlyphsCat(glyphs, detail_glyphs);
-    auto unicode_text_glyphs =
-        ff::PrintUnicode({regular_font, 14.0f, 0xffda09ff}, kunicode_text,
-                         {kwindow_width * 0.5f, kwindow_height * 0.5f});
-    ff::GlyphsCat(glyphs, unicode_text_glyphs);
-    auto vertical_line = ff::PrintUnicode(
-        {italic_font, 20.0f, 0xff0000ff}, U"Field Fusion", {100, 14.0f},
-        ff::PrintOptions::kPrintVertically | ff::PrintOptions::kEnableKerning);
+    auto glyphs = ff::PrintUnicode(
+        {regular_font, 14, kwhite},
+        U"Быстрая бурая лиса перепрыгивает через ленивую собаку", {0, 0});
+    // auto detail_glyphs =
+    //     ff::PrintUnicode({regular_font, 14, kwhite}, details, {0, kwindow_height *
+    //     0.5f});
+    // ff::GlyphsCat(glyphs, detail_glyphs);
+    // auto unicode_text_glyphs =
+    //     ff::PrintUnicode({regular_font, 14.0f, 0xffda09ff}, kunicode_text,
+    //                      {kwindow_width * 0.5f, kwindow_height * 0.5f});
+    // ff::GlyphsCat(glyphs, unicode_text_glyphs);
+    // auto vertical_line = ff::PrintUnicode(
+    //     {italic_font, 20.0f, 0xff0000ff}, U"Field Fusion", {100, 14.0f},
+    //     ff::PrintOptions::kPrintVertically | ff::PrintOptions::kEnableKerning);
 
     float projection[4][4];
     ff::Ortho(0, kwindow_width, kwindow_height, 0, -1.0f, 1.0f, projection);
@@ -102,7 +105,7 @@ int main() {
     for (; not glfwWindowShouldClose(window);) {
         glClear(GL_COLOR_BUFFER_BIT);
         { (void)ff::Draw(regular_font, glyphs, (float *)projection); }
-        { (void)ff::Draw(italic_font, vertical_line, (float *)projection); }
+        // { (void)ff::Draw(italic_font, vertical_line, (float *)projection); }
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
