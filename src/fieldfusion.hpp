@@ -1784,7 +1784,8 @@ void Draw(const FontHandle font_handle, const Glyphs &glyphs,
     auto &fpack = _fonts.at(typography.font);
     auto pos0 = Position{position.x, position.y + typography.size};
 
-    std::vector<Glyph> result(buffer.size());
+    std::vector<Glyph> result();
+    result.reserve(buffer.size());
     for (size_t i = 0; i < buffer.size(); i++) {
         const auto &codepoint = (char32_t)buffer.at(i);
 
