@@ -230,7 +230,7 @@ float srgb_from_linear(float value) {
        ? value* 12.92f
        : pow (value, 1.0f/2.4f) * 1.055f - 0.055f;
 }
-
+float Luma(vec3 color) { return dot(color, vec3(0.2126, 0.7152, 0.0722)); }
 void main() {
     vec2 coords = (font_projection * vec4(text_pos, 0.0, 1.0)).xy;
 
@@ -242,10 +242,19 @@ void main() {
     float sigDist = median(s.r, s.g, s.b) - threshold;
     sigDist *= dot(msdfUnit, 0.5/fwidth(coords));
     float opacity = clamp(sigDist + 0.5, 0.0, 1.0);
-    color = mix(vec4(0.0, 0.0, 0.0, 0.0), text_color, opacity);
-    color.r = srgb_from_linear(color.r); 
-    color.g = srgb_from_linear(color.g); 
-    color.b = srgb_from_linear(color.b); 
+
+    vec3 v = text_color.rgb;
+    v = mix(vec4(0.0, 0.0, 0.0, 0.0), text_color, opacity).rgb;
+    v.r = srgb_from_linear(v.r); 
+    v.g = srgb_from_linear(v.g); 
+    v.b = srgb_from_linear(v.b); 
+
+    float uSaturation = 4.0f;
+    float luma = Luma(v);
+    v = mix(vec3(luma), v, uSaturation);
+
+    color = vec4(v, opacity);
+
 })SHADER";
 
 static const char *kfont_geometry = R"SHADER(
