@@ -19,31 +19,30 @@
 
 #include "freetype/ftoutln.h"
 
-namespace ff {
-using FontHandle = size_t;
+using ff_font_handle_t = size_t;
 
 constexpr const size_t kdynamic_map_initial_size = 0xff;
-struct MapItem {
+struct ff_map_item_t {
     FT_ULong codepoint;
     int codepoint_index;
     float advance[2];
 };
 
-struct Map {
-    std::array<MapItem, 0xff> extended_ascii_;
-    std::unordered_map<char32_t, MapItem> codepoint_map_;
+struct ff_map_t {
+    std::array<ff_map_item_t, 0xff> extended_ascii_;
+    std::unordered_map<char32_t, ff_map_item_t> codepoint_map_;
 
-    MapItem *at(char32_t codepoint) noexcept;
-    MapItem *insert(const char32_t codepoint) noexcept;
+    ff_map_item_t *at(char32_t codepoint) noexcept;
+    ff_map_item_t *insert(const char32_t codepoint) noexcept;
 };
 
-struct Font {
+struct ff_font_t {
     const char *font_path;
     float scale;
     float range;
     float vertical_advance;
 
-    Map character_index;
+    ff_map_t character_index;
 
     /**
      * FreeType Face handle.
@@ -59,7 +58,7 @@ struct Font {
     uint point_input_texture;
 };
 
-struct Atlas {
+struct ff_atlas_t {
     int refcount; /* Amount of fonts using this atlas */
     int implicit; /* Set to 1 if the atlas was created automatically and not by
                       user */
@@ -108,12 +107,12 @@ struct Atlas {
     int padding;
 };
 
-struct Position {
+struct ff_position_t {
     float x;
     float y;
 };
 
-struct Glyph {
+struct ff_glyph_t {
     struct Characteristics {
         /**
          * Y offset (for e.g. subscripts and superscripts).
@@ -137,7 +136,7 @@ struct Glyph {
     /**
      * X and Y coordinates in in the projection coordinates.
      */
-    Position position;
+    ff_position_t position;
 
     /**
      * The color of the character in 0xRRGGBBAA format.
@@ -156,52 +155,50 @@ struct Glyph {
     Characteristics characteristics;
 };
 
-struct FontTexturePack {
-    Font font;
-    Atlas atlas;
+struct ff_font_texture_pack_t {
+    ff_font_t font;
+    ff_atlas_t atlas;
 };
 
-struct Dimensions {
+struct ff_dimensions_t {
     float width;
     float height;
 };
 
-struct Typography {
-    ff::FontHandle font;
+struct ff_typography_t {
+    ff_font_handle_t font;
     float size;
     uint32_t color;
 };
 
-using Glyphs = std::vector<Glyph>;
+using ff_glyphs_t = std::vector<ff_glyph_t>;
 
-enum PrintOptions : int {
-    kEnableKerning = 0x2,
-    kPrintVertically = 0x4,
+enum ff_print_options_t : int {
+    ff_print_options_enable_kerning = 0x2,
+    ff_print_options_print_vertically = 0x4,
 };
 
-void Initialize(const char *version) noexcept;
-FontHandle NewFont(const char *path, const float scale = 4.0f, const float range = 2.0f,
-                   const int texture_width = 1024,
-                   const int texture_padding = 2) noexcept;
-void RemoveFont(const FontHandle) noexcept;
-void GenExtendedAscii(const FontHandle) noexcept;
-void GenGlyphs(const FontHandle, const std::vector<char32_t> &codepoints) noexcept;
-void Draw(const FontHandle, const Glyphs &, const float *projection) noexcept;
-[[nodiscard]] Glyphs PrintUnicode(const Typography, const std::u32string_view buffer,
-                                  const Position position,
-                                  const int print_options = kEnableKerning,
-                                  const Glyph::Characteristics = {0.0f, 0.0f,
-                                                                  0.5f}) noexcept;
-[[nodiscard]] Dimensions Measure(const FontHandle, const std::u32string_view &buffer,
-                                 const float size, const bool with_kerning = true);
-void Terminate() noexcept;
+void ff_initialize(const char *version) noexcept;
+ff_font_handle_t ff_new_font(const char *path, const float scale = 4.0f,
+                       const float range = 2.0f, const int texture_width = 1024,
+                       const int texture_padding = 2) noexcept;
+void ff_remove_font(const ff_font_handle_t) noexcept;
+void ff_gen_glyphs(const ff_font_handle_t, const std::vector<char32_t> &codepoints) noexcept;
+void ff_draw(const ff_font_handle_t, const ff_glyphs_t &, const float *projection) noexcept;
+[[nodiscard]] ff_glyphs_t ff_print_unicode(
+    const ff_typography_t, const std::u32string_view buffer, const ff_position_t position,
+    const int print_options = ff_print_options_enable_kerning,
+    const ff_glyph_t::Characteristics = {0.0f, 0.0f, 0.5f}) noexcept;
+[[nodiscard]] ff_dimensions_t ff_measure(const ff_font_handle_t,
+                                     const std::u32string_view &buffer, const float size,
+                                     const bool with_kerning = true);
+void ff_terminate() noexcept;
 
-void Ortho(float left, float right, float bottom, float top, float nearVal, float farVal,
-           float dest[][4]);
-inline void GlyphsCat(Glyphs &to, Glyphs &from) {
+void ff_ortho(float left, float right, float bottom, float top, float nearVal,
+             float farVal, float dest[][4]);
+inline void ff_glyphs_cat(ff_glyphs_t &to, ff_glyphs_t &from) {
     to.insert(to.end(), from.begin(), from.end());
 }
-}  // namespace ff
 
 #ifdef FIELDFUSION_IMPLEMENTATION
 #include <algorithm>
@@ -209,7 +206,6 @@ inline void GlyphsCat(Glyphs &to, Glyphs &from) {
 #include <memory>
 #include <numeric>
 
-namespace ff {
 static const char *kfont_fragment = R"SHADER(
 precision highp float;
 in vec2 text_pos;
@@ -848,7 +844,7 @@ vec3 get_pixel_distance(vec2 point) {
 namespace {
 constexpr const float kserializer_scale = 64;
 static_assert(kserializer_scale >= 8);
-enum class Color : int {
+enum class SeriColor : int {
     Black = 0,
     Red = 1,
     Green = 2,
@@ -959,23 +955,28 @@ int AddQuad(const FT_Vector *control, const FT_Vector *to, void *user) {
     return 0;
 }
 }  // namespace outline_functions
-constexpr const Color start[3] = {Color::Cyan, Color::Magenta, Color::Yellow};
-void SwitchColor(enum Color *color, unsigned long long *seed, enum Color *_banned) {
-    enum Color banned = _banned ? *_banned : Color::Black;
-    enum Color combined = (Color)(static_cast<int>(*color) & static_cast<int>(banned));
+constexpr const SeriColor start[3] = {SeriColor::Cyan, SeriColor::Magenta,
+                                      SeriColor::Yellow};
+void SwitchSeriColor(enum SeriColor *color, unsigned long long *seed,
+                     enum SeriColor *_banned) {
+    enum SeriColor banned = _banned ? *_banned : SeriColor::Black;
+    enum SeriColor combined =
+        (SeriColor)(static_cast<int>(*color) & static_cast<int>(banned));
 
-    if (combined == Color::Red || combined == Color::Green || combined == Color::Blue) {
-        *color = (Color)(static_cast<int>(combined) ^ static_cast<int>(Color::White));
+    if (combined == SeriColor::Red || combined == SeriColor::Green ||
+        combined == SeriColor::Blue) {
+        *color =
+            (SeriColor)(static_cast<int>(combined) ^ static_cast<int>(SeriColor::White));
         return;
     }
-    if (*color == Color::Black || *color == Color::White) {
+    if (*color == SeriColor::Black || *color == SeriColor::White) {
         *color = start[*seed % 3];
         *seed /= 3;
         return;
     }
     int shifted = static_cast<int>(*color) << (1 + (*seed & 1));
-    *color = (Color)((static_cast<int>(shifted) | static_cast<int>(shifted) >> 3) &
-                     static_cast<int>(Color::White));
+    *color = (SeriColor)((static_cast<int>(shifted) | static_cast<int>(shifted) >> 3) &
+                         static_cast<int>(SeriColor::White));
     *seed >>= 1;
 }
 inline vec2 Mix(const vec2 a, const vec2 b, float weight) {
@@ -1072,7 +1073,7 @@ void SerializeGlyph(FT_Face face, int code, char *meta_buffer,
             vec2 prev = SegmentPoint(prev_ptr, prev_npoints, 0);
 
             for (int j = 0; j < nsegments; ++j) {
-                meta_index++; /* Color, leave empty here. */
+                meta_index++; /* SeriColor, leave empty here. */
                 int npoints = meta_buffer[meta_index++];
 
                 vec2 cur = SegmentPoint(point_ptr, npoints, 0);
@@ -1114,7 +1115,7 @@ void SerializeGlyph(FT_Face face, int code, char *meta_buffer,
             int index = 0;
             vec2 *cur_points = point_ptr;
             for (int j = 0; j < nsegments; ++j, ++index) {
-                meta_index++; /* Color, leave empty here. */
+                meta_index++; /* SeriColor, leave empty here. */
                 int npoints = meta_buffer[meta_index++];
 
                 vec2 cur_direction = SegmentDirection(cur_points, npoints, 0.0);
@@ -1135,21 +1136,21 @@ void SerializeGlyph(FT_Face face, int code, char *meta_buffer,
         if (!len_corners) {
             /* Smooth contour */
             for (int j = 0; j < nsegments; ++j) {
-                meta_buffer[meta_index++] = static_cast<int>(Color::White);
+                meta_buffer[meta_index++] = static_cast<int>(SeriColor::White);
                 meta_index++; /* npoints */
             }
         } else if (len_corners == 1) {
             /* Teardrop */
-            enum Color colors[3] = {Color::White, Color::White};
-            SwitchColor(&colors[0], &seed, NULL);
+            enum SeriColor colors[3] = {SeriColor::White, SeriColor::White};
+            SwitchSeriColor(&colors[0], &seed, NULL);
             colors[2] = colors[0];
-            SwitchColor(&colors[2], &seed, NULL);
+            SwitchSeriColor(&colors[2], &seed, NULL);
 
             int corner = corners[0];
             if (nsegments >= 3) {
                 int m = nsegments;
                 for (int i = 0; i < m; ++i) {
-                    enum Color c =
+                    enum SeriColor c =
                         (colors + 1)[(int)(3 + 2.875 * i / (m - 1) - 1.4375 + .5) - 3];
                     meta_buffer[meta_index + 2 * ((corner + i) % m)] = (char)c;
                 }
@@ -1163,17 +1164,17 @@ void SerializeGlyph(FT_Face face, int code, char *meta_buffer,
             int spline = 0;
             int start = corners[0];
             int m = nsegments;
-            enum Color color = Color::White;
-            SwitchColor(&color, &seed, NULL);
-            enum Color initial_color = color;
+            enum SeriColor color = SeriColor::White;
+            SwitchSeriColor(&color, &seed, NULL);
+            enum SeriColor initial_color = color;
             for (int i = 0; i < m; ++i) {
                 int index = (start + i) % m;
 
                 if (spline + 1 < corner_count && corners[spline + 1] == index) {
                     ++spline;
-                    enum Color banned = (enum Color)((spline == corner_count - 1) *
-                                                     static_cast<int>(initial_color));
-                    SwitchColor(&color, &seed, &banned);
+                    enum SeriColor banned = (enum SeriColor)(
+                        (spline == corner_count - 1) * static_cast<int>(initial_color));
+                    SwitchSeriColor(&color, &seed, &banned);
                 }
                 meta_buffer[meta_index + 2 * index] = (char)color;
             }
@@ -1260,6 +1261,12 @@ bool CompileShader(const char *source, GLenum type, GLuint *shader, const char *
     return true;
 }
 
+void GenExtendedAscii(const ff_font_handle_t font_handle) noexcept {
+    std::vector<char32_t> codepoints(0xE0);
+    std::iota(codepoints.begin(), codepoints.end(), 0);
+    ff_gen_glyphs(font_handle, codepoints);
+}
+
 struct Uniforms {
     int window_projection;
     int font_atlas_projection;
@@ -1290,11 +1297,11 @@ static uint _bbox_vao;
 static uint _bbox_vbo;
 static int _max_texture_size;
 static size_t _max_handle{0};
-static std::unordered_map<FontHandle, FontTexturePack> _fonts;
+static std::unordered_map<ff_font_handle_t, ff_font_texture_pack_t> _fonts;
 }  // namespace
 
-void Ortho(float left, float right, float bottom, float top, float nearVal, float farVal,
-           float dest[][4]) {
+void ff_ortho(float left, float right, float bottom, float top, float nearVal,
+             float farVal, float dest[][4]) {
     GLfloat rl, tb, fn;
 
     memcpy(dest, kmat4_zero_init, sizeof(kmat4_zero_init));
@@ -1312,7 +1319,7 @@ void Ortho(float left, float right, float bottom, float top, float nearVal, floa
     dest[3][3] = 1.0f;
 }
 
-void Initialize(const char *version) noexcept {
+void ff_initialize(const char *version) noexcept {
     const FT_Error error = FT_Init_FreeType(&_ft_library);
     assert("Failed to initialize freetype2" && !error);
 
@@ -1384,9 +1391,9 @@ void Initialize(const char *version) noexcept {
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
-[[nodiscard]] FontHandle NewFont(const char *path, const float scale, const float range,
-                                 const int texture_width,
-                                 const int texture_padding) noexcept {
+[[nodiscard]] ff_font_handle_t ff_new_font(const char *path, const float scale,
+                                     const float range, const int texture_width,
+                                     const int texture_padding) noexcept {
     auto handle = _max_handle;
     _fonts[handle] = {};
     auto &font = _fonts[handle].font;
@@ -1416,13 +1423,7 @@ void Initialize(const char *version) noexcept {
     return handle;
 }
 
-void GenExtendedAscii(const FontHandle font_handle) noexcept {
-    std::vector<char32_t> codepoints(0xE0);
-    std::iota(codepoints.begin(), codepoints.end(), 0);
-    GenGlyphs(font_handle, codepoints);
-}
-
-void RemoveFont(const FontHandle handle) noexcept {
+void ff_remove_font(const ff_font_handle_t handle) noexcept {
     {
         auto &fpack = _fonts.at(handle);
         FT_Done_Face(fpack.font.face);
@@ -1438,8 +1439,8 @@ void RemoveFont(const FontHandle handle) noexcept {
     _fonts.erase(handle);
 }
 
-void GenGlyphs(const FontHandle font_handle,
-               const std::vector<char32_t> &codepoints) noexcept {
+void ff_gen_glyphs(const ff_font_handle_t font_handle,
+                 const std::vector<char32_t> &codepoints) noexcept {
     auto &fpack = _fonts.at(font_handle);
     GLint original_viewport[4];
     glGetIntegerv(GL_VIEWPORT, original_viewport);
@@ -1619,11 +1620,11 @@ void GenGlyphs(const FontHandle font_handle,
     glBindTexture(GL_TEXTURE_2D, 0);
 
     GLfloat framebuffer_projection[4][4];
-    Ortho(0, (GLfloat)fpack.atlas.texture_width, 0, (GLfloat)fpack.atlas.texture_height,
-          -1.0, 1.0, framebuffer_projection);
-    Ortho(-(GLfloat)fpack.atlas.texture_width, (GLfloat)fpack.atlas.texture_width,
-          -(GLfloat)fpack.atlas.texture_height, (GLfloat)fpack.atlas.texture_height, -1.0,
-          1.0, fpack.atlas.projection);
+    ff_ortho(0, (GLfloat)fpack.atlas.texture_width, 0, (GLfloat)fpack.atlas.texture_height,
+            -1.0, 1.0, framebuffer_projection);
+    ff_ortho(-(GLfloat)fpack.atlas.texture_width, (GLfloat)fpack.atlas.texture_width,
+            -(GLfloat)fpack.atlas.texture_height, (GLfloat)fpack.atlas.texture_height,
+            -1.0, 1.0, fpack.atlas.projection);
 
     glUseProgram(_gen_shader);
     glUniform1i(_uniforms.metadata, 0);
@@ -1698,8 +1699,8 @@ void GenGlyphs(const FontHandle font_handle,
                original_viewport[3]);
 }
 
-void Draw(const FontHandle font_handle, const Glyphs &glyphs,
-          const float *projection) noexcept {
+void ff_draw(const ff_font_handle_t font_handle, const ff_glyphs_t &glyphs,
+            const float *projection) noexcept {
     auto &fpack = _fonts.at(font_handle);
 
     GLuint glyph_buffer;
@@ -1708,7 +1709,7 @@ void Draw(const FontHandle font_handle, const Glyphs &glyphs,
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, glyph_buffer);
-    glBufferData(GL_ARRAY_BUFFER, glyphs.size() * sizeof(Glyph), &glyphs[0],
+    glBufferData(GL_ARRAY_BUFFER, glyphs.size() * sizeof(ff_glyph_t), &glyphs[0],
                  GL_DYNAMIC_DRAW);
 
     glEnableVertexAttribArray(0);
@@ -1719,21 +1720,21 @@ void Draw(const FontHandle font_handle, const Glyphs &glyphs,
     glEnableVertexAttribArray(5);
     glEnableVertexAttribArray(6);
 
-    auto position_offset = (void *)offsetof(Glyph, position.x);
-    auto color_offset = (void *)offsetof(Glyph, color);
-    auto codepoint_offset = (void *)offsetof(Glyph, codepoint);
-    auto size_offset = (void *)offsetof(Glyph, size);
-    auto offset_offset = (void *)offsetof(Glyph, characteristics.offset);
-    auto skew_offset = (void *)offsetof(Glyph, characteristics.skew);
-    auto strength_offset = (void *)offsetof(Glyph, characteristics.strength);
+    auto position_offset = (void *)offsetof(ff_glyph_t, position.x);
+    auto color_offset = (void *)offsetof(ff_glyph_t, color);
+    auto codepoint_offset = (void *)offsetof(ff_glyph_t, codepoint);
+    auto size_offset = (void *)offsetof(ff_glyph_t, size);
+    auto offset_offset = (void *)offsetof(ff_glyph_t, characteristics.offset);
+    auto skew_offset = (void *)offsetof(ff_glyph_t, characteristics.skew);
+    auto strength_offset = (void *)offsetof(ff_glyph_t, characteristics.strength);
 
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Glyph), position_offset);
-    glVertexAttribIPointer(1, 4, GL_UNSIGNED_BYTE, sizeof(Glyph), color_offset);
-    glVertexAttribIPointer(2, 1, GL_INT, sizeof(Glyph), codepoint_offset);
-    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(Glyph), size_offset);
-    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(Glyph), offset_offset);
-    glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, sizeof(Glyph), skew_offset);
-    glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, sizeof(Glyph), strength_offset);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(ff_glyph_t), position_offset);
+    glVertexAttribIPointer(1, 4, GL_UNSIGNED_BYTE, sizeof(ff_glyph_t), color_offset);
+    glVertexAttribIPointer(2, 1, GL_INT, sizeof(ff_glyph_t), codepoint_offset);
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(ff_glyph_t), size_offset);
+    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(ff_glyph_t), offset_offset);
+    glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, sizeof(ff_glyph_t), skew_offset);
+    glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, sizeof(ff_glyph_t), strength_offset);
 
     /* Enable gamma correction if user didn't enabled it */
     auto is_srgb_enabled = glIsEnabled(GL_FRAMEBUFFER_SRGB);
@@ -1786,27 +1787,27 @@ void Draw(const FontHandle font_handle, const Glyphs &glyphs,
     glDeleteVertexArrays(1, &vao);
 }
 
-[[nodiscard]] Glyphs PrintUnicode(const Typography typography,
-                                  const std::u32string_view buffer,
-                                  const Position position, const int print_options,
-                                  const Glyph::Characteristics characteristics) noexcept {
+[[nodiscard]] ff_glyphs_t ff_print_unicode(
+    const ff_typography_t typography, const std::u32string_view buffer,
+    const ff_position_t position, const int print_options,
+    const ff_glyph_t::Characteristics characteristics) noexcept {
     auto &fpack = _fonts.at(typography.font);
-    auto pos0 = Position{position.x, position.y + typography.size};
+    auto pos0 = ff_position_t{position.x, position.y + typography.size};
 
-    std::vector<Glyph> result;
+    std::vector<ff_glyph_t> result;
     result.reserve(buffer.size());
     for (size_t i = 0; i < buffer.size(); i++) {
         const auto &codepoint = (char32_t)buffer.at(i);
 
         auto idx = fpack.font.character_index.at(codepoint);
         if (idx == nullptr) {
-            GenGlyphs(typography.font, std::vector<char32_t>{codepoint});
+            ff_gen_glyphs(typography.font, std::vector<char32_t>{codepoint});
             idx = fpack.font.character_index.at(codepoint);
             assert(idx != nullptr);
         }
 
         FT_Vector kerning{};
-        const bool should_get_kerning = (print_options & kEnableKerning) and
+        const bool should_get_kerning = (print_options & ff_print_options_enable_kerning) and
                                         FT_HAS_KERNING(fpack.font.face) and (i > 0);
         if (should_get_kerning) {
             const auto &previous_character = buffer.at(i - 1);
@@ -1824,7 +1825,7 @@ void Draw(const FontHandle font_handle, const Glyphs &glyphs,
         new_glyph.size = typography.size;
         new_glyph.characteristics = characteristics;
 
-        if (not(print_options & kPrintVertically))
+        if (not(print_options & ff_print_options_print_vertically))
             pos0.x += (idx->advance[0] + kerning.x) *
                       (typography.size * _dpi[0] / 72.0f) / fpack.font.face->units_per_EM;
         else
@@ -1835,12 +1836,12 @@ void Draw(const FontHandle font_handle, const Glyphs &glyphs,
     return result;
 }
 
-[[nodiscard]] Dimensions Measure(const FontHandle font_handle,
-                                 const std::u32string_view &buffer, const float size,
-                                 const bool with_kerning) {
+[[nodiscard]] ff_dimensions_t ff_measure(const ff_font_handle_t font_handle,
+                                   const std::u32string_view &buffer, const float size,
+                                   const bool with_kerning) {
     auto &fpack = _fonts.at(font_handle);
-    Dimensions result{};
-    Glyphs glyphs;
+    ff_dimensions_t result{};
+    ff_glyphs_t glyphs;
     auto tmp_width{0.0f};
 
     for (size_t i = 0; i < buffer.size(); i++) {
@@ -1848,7 +1849,7 @@ void Draw(const FontHandle font_handle, const Glyphs &glyphs,
 
         auto idx = fpack.font.character_index.at(codepoint);
         if (idx == nullptr) {
-            GenGlyphs(font_handle, {codepoint});
+            ff_gen_glyphs(font_handle, {codepoint});
             idx = fpack.font.character_index.at(codepoint);
             assert(idx != nullptr);
         }
@@ -1876,20 +1877,20 @@ void Draw(const FontHandle font_handle, const Glyphs &glyphs,
     return result;
 }
 
-void Terminate() noexcept {
+void ff_terminate() noexcept {
     {
-        std::vector<FontHandle> handles;
+        std::vector<ff_font_handle_t> handles;
         for (auto &kv_pair : _fonts) handles.push_back(kv_pair.first);
         for (auto &handle : handles) {
-            RemoveFont(handle);
+            ff_remove_font(handle);
         }
     }
 
     FT_Done_FreeType(_ft_library);
 }
 
-// ffmap
-MapItem *Map::at(char32_t codepoint) noexcept {
+// ff_map_t
+ff_map_item_t *ff_map_t::at(char32_t codepoint) noexcept {
     auto within_extended_ascii_range = codepoint <= 0xE0;
     if (within_extended_ascii_range) return &extended_ascii_.at(codepoint);
     const auto contains = codepoint_map_.find(codepoint) != codepoint_map_.end();
@@ -1897,7 +1898,7 @@ MapItem *Map::at(char32_t codepoint) noexcept {
     return &codepoint_map_.at(codepoint);
 }
 
-MapItem *Map::insert(const char32_t codepoint) noexcept {
+ff_map_item_t *ff_map_t::insert(const char32_t codepoint) noexcept {
     auto within_extended_ascii_range = codepoint <= 0xE0;
     if (within_extended_ascii_range) {
         auto &item = extended_ascii_.at(codepoint);
@@ -1910,6 +1911,5 @@ MapItem *Map::insert(const char32_t codepoint) noexcept {
     new_item.codepoint_index = 0xE0 + codepoint_map_.size() - 1;
     return &new_item;
 }
-}  // namespace ff
 // /impl
 #endif

@@ -53,14 +53,14 @@ std::u32string to_unicode(const std::string &s) {
     return conv.from_bytes(s);
 }
 
-ff::Glyphs get_variable_size_glyphs(const ff::FontHandle font_handle) {
-    ff::Glyphs glyphs;
+ff_glyphs_t get_variable_size_glyphs(const ff_font_handle_t font_handle) {
+    ff_glyphs_t glyphs;
     float y0 = kinitial_font_size;
     int size0 = kinitial_font_size;
     for (size_t i = 0; i < kline_repeat - 1; i++) {
         auto tmp_glyphs =
-            ff::PrintUnicode({font_handle, (float)size0, kwhite}, ktext, {200, y0}, 0);
-        ff::GlyphsCat(glyphs, tmp_glyphs);
+            ff_print_unicode({font_handle, (float)size0, kwhite}, ktext, {200, y0}, 0);
+        ff_glyphs_cat(glyphs, tmp_glyphs);
         size0 += kfont_size_increment;
         y0 += size0 + kline_padding;
     }
@@ -80,37 +80,37 @@ int main() {
     //     to_unicode(
     //         reinterpret_cast<const char *>(glGetString(GL_SHADING_LANGUAGE_VERSION)));
 
-    ff::Initialize("330");
-    auto regular_font = ff::NewFont(kregular_font_path);
-    auto italic_font = ff::NewFont(kitalic_font_path);
+    ff_initialize("330");
+    auto regular_font = ff_new_font(kregular_font_path);
+    auto italic_font = ff_new_font(kitalic_font_path);
 
-    auto glyphs = ff::PrintUnicode(
-        {regular_font, 14, kwhite},
-        U"Быстрая бурая лиса перепрыгивает через ленивую собаку", {0, 0});
+    auto glyphs =
+        ff_print_unicode({regular_font, 14, kwhite},
+                       U"Быстрая бурая лиса перепрыгивает через ленивую собаку", {0, 0});
     // auto detail_glyphs =
-    //     ff::PrintUnicode({regular_font, 14, kwhite}, details, {0, kwindow_height *
+    //     ffPrintUnicode({regular_font, 14, kwhite}, details, {0, kwindow_height *
     //     0.5f});
-    // ff::GlyphsCat(glyphs, detail_glyphs);
+    // ffGlyphsCat(glyphs, detail_glyphs);
     // auto unicode_text_glyphs =
-    //     ff::PrintUnicode({regular_font, 14.0f, 0xffda09ff}, kunicode_text,
+    //     ffPrintUnicode({regular_font, 14.0f, 0xffda09ff}, kunicode_text,
     //                      {kwindow_width * 0.5f, kwindow_height * 0.5f});
-    // ff::GlyphsCat(glyphs, unicode_text_glyphs);
-    // auto vertical_line = ff::PrintUnicode(
+    // ffGlyphsCat(glyphs, unicode_text_glyphs);
+    // auto vertical_line = ffPrintUnicode(
     //     {italic_font, 20.0f, 0xff0000ff}, U"Field Fusion", {100, 14.0f},
-    //     ff::PrintOptions::kPrintVertically | ff::PrintOptions::kEnableKerning);
+    //     ffPrintOptions::kPrintVertically | ffPrintOptions::kEnableKerning);
 
     float projection[4][4];
-    ff::Ortho(0, kwindow_width, kwindow_height, 0, -1.0f, 1.0f, projection);
+    ff_ortho(0, kwindow_width, kwindow_height, 0, -1.0f, 1.0f, projection);
 
     for (; not glfwWindowShouldClose(window);) {
         glClear(GL_COLOR_BUFFER_BIT);
-        { (void)ff::Draw(regular_font, glyphs, (float *)projection); }
-        // { (void)ff::Draw(italic_font, vertical_line, (float *)projection); }
+        { (void)ff_draw(regular_font, glyphs, (float *)projection); }
+        // { (void)ff_draw(italic_font, vertical_line, (float *)projection); }
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
 
-    ff::Terminate();
+    ff_terminate();
     DestroyGlCtx();
 }
 
