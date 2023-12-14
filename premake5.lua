@@ -10,14 +10,29 @@ end
 workspace "fieldfusion"
   language "c"
   cdialect "c11"
-  configurations {"release", "debug"}
+  configurations {"address_sanitize", "release", "debug"}
+
+  filter "configurations:address_sanitize"
+  buildoptions {"-fsanitize=address", "-g3"}
+  linkoptions {"-fsanitize=address"}
+  symbols "On"
+
   filter "configurations:debug"
   defines {"DEBUG"}
   symbols "On"
 
-
   filter "configurations:release"
     optimize "Full"
+
+project "fieldfusion"
+  kind "StaticLib"
+  configurations {"release", "debug"}
+  includedirs "/usr/include/freetype2"
+  includedirs "external/"
+  files "src/**"
+  links "freetype"
+  links 'm'
+
 
 project "demo"
   kind "WindowedApp"
@@ -26,4 +41,6 @@ project "demo"
   files {"demo/**"}
   links "freetype"
   links "glfw"
+  links "fieldfusion"
+  links 'm'
   CopyJetbrains()

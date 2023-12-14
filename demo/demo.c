@@ -1,3 +1,5 @@
+#include <bits/types/mbstate_t.h>
+#include <uchar.h>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #define GLAD_GL_IMPLEMENTATION
@@ -6,23 +8,24 @@
 #define FIELDFUSION_DONT_INCLUDE_GLAD
 #define FIELDFUSION_IMPLEMENTATION
 #include <fieldfusion.h>
+#include <stdlib.h>
 
 static const int kwindow_width = 1366;
 static const int kwindow_height = 768;
-static const float kinitial_font_size = 8.0f;
-static const float kfont_size_increment = 2.0f;
-static const float kline_padding = 2.0f;
-static const int kline_repeat = 12;
-static const long kwhite = 0xffffffff;
+// static const float kinitial_font_size = 8.0f;
+// static const float kfont_size_increment = 2.0f;
+// static const float kline_padding = 2.0f;
+// static const int kline_repeat = 12;
+// static const long kwhite = 0xffffffff;
 // static const std::u32string ktext =
 //     U"The quick brown fox jumps over the lazy dog";
 // static const std::u32string kunicode_text =
 //     U"Быстрая бурая лиса перепрыгивает через ленивую собаку";
 static const char *kwin_title = "msdf demo";
-static const char *kregular_font_path{
-    "jetbrainsfont/fonts/ttf/JetBrainsMono-Regular.ttf"};
-static const char *kitalic_font_path{
-    "jetbrainsfont/fonts/ttf/JetBrainsMono-MediumItalic.ttf"};
+static const char *kregular_font_path =
+    "jetbrainsfont/fonts/ttf/JetBrainsMono-Regular.ttf";
+// static const char *kitalic_font_path{
+//     "jetbrainsfont/fonts/ttf/JetBrainsMono-MediumItalic.ttf"};
 
 static GLFWwindow *window;
 void InitGlCtx() {
@@ -39,7 +42,10 @@ void InitGlCtx() {
     glClearColor(0.25f, 0.25f, 0.25f, 1.0f);
 }
 
-void DestroyGlCtx() { glfwTerminate(); }
+void DestroyGlCtx() {
+    glfwDestroyWindow(window);
+    glfwTerminate();
+}
 
 // std::u32string to_unicode(const std::string &s) {
 //     std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t>
@@ -76,9 +82,24 @@ int main() {
     //         reinterpret_cast<const char
     //         *>(glGetString(GL_SHADING_LANGUAGE_VERSION)));
 
-    ff_initialize("330");
-    auto regular_font =
+    ff_initialize("440");
+    int regular_font =
         ff_new_font(kregular_font_path, ff_default_font_config());
+
+    ff_glyphs_vector_t glyphs = ff_glyphs_vector_new();
+    char32_t dest[6];
+    ff_utf8_to_utf32(dest, "damn", 4);
+
+    ff_print_utf32(
+        &glyphs, (ff_utf32_str_t){.data = dest, .size = 4},
+        (print_params_t){
+            .typography = (ff_typography_t){.font = regular_font,
+                                            .size = 12.f,
+                                            .color = 0xffffffff},
+            .print_flags = ff_get_default_print_flags(),
+            .characteristics = ff_get_default_characteristics()},
+        (ff_position_t){.x = 100, .y = 200});
+
     // auto italic_font = ff_new_font(kitalic_font_path);
 
     // auto glyphs = ff_print_unicode(
@@ -100,39 +121,27 @@ int main() {
     //     {100, 14.0f}, ffPrintOptions::kPrintVertically |
     //     ffPrintOptions::kEnableKerning);
 
-    // float projection[4][4];
-    // ff_ortho(0, kwindow_width, kwindow_height, 0, -1.0f, 1.0f,
-    //          projection);
+    float projection[4][4];
+    ff_get_ortho_projection(
+        (ortho_projection_params_t){.scr_left = 0,
+                                    .scr_right = kwindow_width,
+                                    .scr_bottom = kwindow_height,
+                                    .scr_top = 0,
+                                    .near = -1.0f,
+                                    .far = 1.0f},
+        projection);
 
-    // for (; not glfwWindowShouldClose(window);) {
-    //     glClear(GL_COLOR_BUFFER_BIT);
-    //     { (void)ff_draw(regular_font, glyphs, (float *)projection);
+    for (; !glfwWindowShouldClose(window);) {
+        glClear(GL_COLOR_BUFFER_BIT);
+        ff_draw(regular_font, glyphs.data, glyphs.size, (float*)projection);
     //     }
     //     // { (void)ff_draw(italic_font, vertical_line, (float
     //     // *)projection); }
-    //     glfwSwapBuffers(window);
-    //     glfwPollEvents();
-    // }
+        glfwSwapBuffers(window);
+        glfwPollEvents();
+    }
+    ff_glyphs_vector_free(&glyphs);
 
     ff_terminate();
     DestroyGlCtx();
 }
-
-const char *kvertex_shader_src = R"SHADER(#version 330 core
-layout (location = 0) in vec4 vertex;
-out vec2 text_pos;
-void main() {
-    gl_Position = vec4(vertex.xy, 0.0, 1.0);
-    text_pos = vertex.zw;
-};
-)SHADER";
-
-const char *kfragment_shader_src = R"SHADER(#version 330 core
-precision mediump float;
-in vec2 text_pos;
-uniform sampler2D tex;
-out vec4 color;
-void main() {
-    color = texture(tex, text_pos);
-};
-)SHADER";
