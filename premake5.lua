@@ -8,8 +8,8 @@ function CopyJetbrains()
 end
 
 workspace "fieldfusion"
-  language "C++"
-  cppdialect "C++17"
+  language "c"
+  cdialect "c11"
   configurations {"release", "debug"}
   filter "configurations:debug"
   defines {"DEBUG"}
