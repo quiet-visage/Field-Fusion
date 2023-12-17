@@ -5,13 +5,12 @@ extern "C" {
 #endif
 
 #include <ft2build.h>
-
 #include FT_FREETYPE_H
 
 #ifndef FIELDFUSION_DONT_INCLUDE_GLAD
 #include <glad.h>
 #endif
-#include <GL/gl.h>
+
 #include <stdbool.h>
 #include <uchar.h>
 
@@ -226,7 +225,7 @@ typedef struct {
     ff_typography_t typography;
     int print_flags;
     ff_characteristics_t characteristics;
-} print_params_t;
+} ff_print_params_t;
 
 typedef struct {
     float scr_left;
@@ -250,10 +249,11 @@ void ff_draw(ff_font_handle_t, ff_glyph_t *glyphs, ulong glyphs_count,
 ff_characteristics_t ff_get_default_characteristics();
 int ff_get_default_print_flags();
 int ff_utf8_to_utf32(char32_t *dest, const char *src, ulong count);
+int ff_utf32_to_utf8(char *dest, const char32_t *src, ulong count);
 void ff_print_utf8(ff_glyphs_vector_t *vec, ff_utf8_str_t str,
-                   print_params_t params, ff_position_t);
+                   ff_print_params_t params, ff_position_t);
 void ff_print_utf32(ff_glyphs_vector_t *vec, ff_utf32_str_t str,
-                    print_params_t params, ff_position_t);
+                    ff_print_params_t params, ff_position_t);
 ff_dimensions_t ff_measure(const ff_font_handle_t, char32_t *str,
                            ulong str_count, float size,
                            bool with_kerning);
@@ -264,6 +264,7 @@ ff_glyphs_vector_t ff_glyphs_vector_new();
 ff_glyph_t *ff_glyphs_vector_get(ff_glyphs_vector_t *v, ulong index);
 void ff_glyphs_vector_free(ff_glyphs_vector_t *v);
 void ff_glyphs_vector_push(ff_glyphs_vector_t *v, ff_glyph_t glyph);
+void ff_glyphs_vector_clear(ff_glyphs_vector_t *v);
 void ff_glyphs_vector_cat(ff_glyphs_vector_t *dest,
                           ff_glyphs_vector_t *src);
 

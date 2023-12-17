@@ -91,8 +91,8 @@ int main() {
     ff_utf8_to_utf32(dest, "damn", 4);
 
     ff_print_utf32(
-        &glyphs, (ff_utf32_str_t){.data = dest, .size = 4},
-        (print_params_t){
+        &glyphs, (ff_utf32_str_t){.data = dest, .size = 5},
+        (ff_print_params_t){
             .typography = (ff_typography_t){.font = regular_font,
                                             .size = 12.f,
                                             .color = 0xffffffff},

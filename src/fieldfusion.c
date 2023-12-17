@@ -2,6 +2,7 @@
 
 #include <math.h>
 #include <sys/types.h>
+#include <uchar.h>
 
 // clang-format off
 #define __FF_EMBED_FILE(var_name, file_name)          \
@@ -604,6 +605,8 @@ void ff_glyphs_vector_cat(ff_glyphs_vector_t *dest,
 
     memcpy(dest->data + dest->size, src->data, src_size);
 }
+
+void ff_glyphs_vector_clear(ff_glyphs_vector_t *v) { v->size = 0; }
 
 static const uint ht_fpack_table_size = 0x200;
 
@@ -1502,8 +1505,17 @@ int ff_utf8_to_utf32(char32_t *dest, const char *src, ulong count) {
     return 0;
 }
 
+int ff_utf32_to_utf8(char *dest, const char32_t *src, ulong count) {
+    mbstate_t state = {0};
+    for (size_t i = 0; i < count; i += 1) {
+        size_t rc = c32rtomb(dest, src[i], &state);
+        if (rc == (size_t)-1) return -1;
+    }
+    return 0;
+}
+
 void ff_print_utf8(ff_glyphs_vector_t *vec, ff_utf8_str_t utf8_string,
-                   print_params_t params, ff_position_t position) {
+                   ff_print_params_t params, ff_position_t position) {
     char32_t converted_utf32[utf8_string.size];
     ff_utf8_to_utf32(converted_utf32, utf8_string.data,
                      utf8_string.size);
@@ -1513,7 +1525,8 @@ void ff_print_utf8(ff_glyphs_vector_t *vec, ff_utf8_str_t utf8_string,
 }
 
 void ff_print_utf32(ff_glyphs_vector_t *vec, ff_utf32_str_t str,
-                    print_params_t params, ff_position_t position) {
+                    ff_print_params_t params,
+                    ff_position_t position) {
     ff_font_texture_pack_t *fpack =
         ht_fpack_map_get(&g_fonts, params.typography.font);
     ff_position_t pos0 = {position.x,
@@ -1572,7 +1585,6 @@ ff_dimensions_t ff_measure(const ff_font_handle_t handle,
         ht_fpack_map_get(&g_fonts, handle);
 
     ff_dimensions_t result = {0};
-    float tmp_width = {0};
 
     for (size_t i = 0; i < str_count; i++) {
         char32_t codepoint = str[i];
@@ -1607,8 +1619,6 @@ ff_dimensions_t ff_measure(const ff_font_handle_t handle,
                         (size * g_dpi[0] / 72.0f) /
                         fpack->font.face->units_per_EM;
     }
-
-    result.width = fmax(result.width, tmp_width);
 
     return result;
 }
