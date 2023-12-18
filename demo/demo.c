@@ -89,6 +89,9 @@ int main() {
     ff_glyphs_vector_t glyphs = ff_glyphs_vector_new();
     char32_t dest[6];
     ff_utf8_to_utf32(dest, "damn", 4);
+    char dest1[4];
+    ff_utf32_to_utf8(dest1, dest, 4);
+    
 
     ff_print_utf32(
         &glyphs, (ff_utf32_str_t){.data = dest, .size = 5},

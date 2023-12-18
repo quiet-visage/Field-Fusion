@@ -1507,9 +1507,11 @@ int ff_utf8_to_utf32(char32_t *dest, const char *src, ulong count) {
 
 int ff_utf32_to_utf8(char *dest, const char32_t *src, ulong count) {
     mbstate_t state = {0};
+    char*dest_p = dest;
     for (size_t i = 0; i < count; i += 1) {
-        size_t rc = c32rtomb(dest, src[i], &state);
+        size_t rc = c32rtomb(dest_p, src[i], &state);
         if (rc == (size_t)-1) return -1;
+        dest_p += rc;
     }
     return 0;
 }
