@@ -225,6 +225,7 @@ typedef struct {
     ff_typography_t typography;
     int print_flags;
     ff_characteristics_t characteristics;
+    bool draw_spaces;
 } ff_print_params_t;
 
 typedef struct {
@@ -260,9 +261,8 @@ ff_dimensions_t ff_measure(const ff_font_handle_t, char32_t *str,
 
 void ff_get_ortho_projection(ortho_projection_params_t params,
                              float dest[][4]);
-ff_glyphs_vector_t ff_glyphs_vector_new();
-ff_glyph_t *ff_glyphs_vector_get(ff_glyphs_vector_t *v, ulong index);
-void ff_glyphs_vector_free(ff_glyphs_vector_t *v);
+ff_glyphs_vector_t ff_glyphs_vector_create();
+void ff_glyphs_vector_destroy(ff_glyphs_vector_t *v);
 void ff_glyphs_vector_push(ff_glyphs_vector_t *v, ff_glyph_t glyph);
 void ff_glyphs_vector_clear(ff_glyphs_vector_t *v);
 void ff_glyphs_vector_cat(ff_glyphs_vector_t *dest,

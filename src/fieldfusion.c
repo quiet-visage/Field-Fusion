@@ -558,7 +558,7 @@ static ht_fpack_map_t g_fonts;
 
 // NLM
 
-ff_glyphs_vector_t ff_glyphs_vector_new() {
+ff_glyphs_vector_t ff_glyphs_vector_create() {
     ulong initial_size = 2;
     ulong elem_size = sizeof(ff_glyph_t);
     ff_glyphs_vector_t result = {
@@ -568,16 +568,11 @@ ff_glyphs_vector_t ff_glyphs_vector_new() {
     return result;
 }
 
-ff_glyph_t *ff_glyphs_vector_get(ff_glyphs_vector_t *v, ulong index) {
-    assert(index < v->size);
-    return &v->data[index];
-}
-
-void ff_glyphs_vector_free(ff_glyphs_vector_t *v) {
+void ff_glyphs_vector_destroy(ff_glyphs_vector_t *v) {
     free(v->data);
     v->data = 0;
-    v->capacity = 0;
     v->size = 0;
+    v->capacity = 0;
 }
 
 void ff_glyphs_vector_push(ff_glyphs_vector_t *v, ff_glyph_t glyph) {
@@ -957,7 +952,7 @@ void ff_initialize(const char *version) {
 ff_font_config_t ff_default_font_config(void) {
     return (ff_font_config_t){
         .scale = 2.0f,
-        .range = 4.0f,
+        .range = 2.2f,
         .texture_width = 1024,
         .texture_padding = 4,
     };
@@ -1507,7 +1502,7 @@ int ff_utf8_to_utf32(char32_t *dest, const char *src, ulong count) {
 
 int ff_utf32_to_utf8(char *dest, const char32_t *src, ulong count) {
     mbstate_t state = {0};
-    char*dest_p = dest;
+    char *dest_p = dest;
     for (size_t i = 0; i < count; i += 1) {
         size_t rc = c32rtomb(dest_p, src[i], &state);
         if (rc == (size_t)-1) return -1;
@@ -1561,13 +1556,15 @@ void ff_print_utf32(ff_glyphs_vector_t *vec, ff_utf32_str_t str,
         }
 
         ff_glyphs_vector_push(vec, (ff_glyph_t){0});
-        ff_glyph_t *new_glyph = &vec->data[vec->size - 1];
+        if (!(!params.draw_spaces && codepoint == U' ')) {
+            ff_glyph_t *new_glyph = &vec->data[vec->size - 1];
 
-        new_glyph->position = pos0;
-        new_glyph->color = params.typography.color;
-        new_glyph->codepoint = idx->codepoint_index;
-        new_glyph->size = params.typography.size;
-        new_glyph->characteristics = params.characteristics;
+            new_glyph->position = pos0;
+            new_glyph->color = params.typography.color;
+            new_glyph->codepoint = idx->codepoint_index;
+            new_glyph->size = params.typography.size;
+            new_glyph->characteristics = params.characteristics;
+        }
 
         if (!(params.print_flags & ff_print_options_print_vertically))
             pos0.x += (idx->advance[0] + kerning.x) *

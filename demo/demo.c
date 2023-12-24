@@ -23,7 +23,7 @@ static const int kwindow_height = 768;
 //     U"Быстрая бурая лиса перепрыгивает через ленивую собаку";
 static const char *kwin_title = "msdf demo";
 static const char *kregular_font_path =
-    "jetbrainsfont/fonts/ttf/JetBrainsMono-Regular.ttf";
+    "/usr/share/fonts/MapleMono-Regular.ttf";
 // static const char *kitalic_font_path{
 //     "jetbrainsfont/fonts/ttf/JetBrainsMono-MediumItalic.ttf"};
 
@@ -86,21 +86,22 @@ int main() {
     int regular_font =
         ff_new_font(kregular_font_path, ff_default_font_config());
 
-    ff_glyphs_vector_t glyphs = ff_glyphs_vector_new();
-    char32_t dest[6];
-    ff_utf8_to_utf32(dest, "damn", 4);
-    char dest1[4];
-    ff_utf32_to_utf8(dest1, dest, 4);
-    
+    ff_glyphs_vector_t glyphs = ff_glyphs_vector_create();
+    char32_t dest[16];
+    ff_utf8_to_utf32(dest, "    hello world", 15);
+    char dest1[16];
+    ff_utf32_to_utf8(dest1, dest, 15);
 
     ff_print_utf32(
-        &glyphs, (ff_utf32_str_t){.data = dest, .size = 5},
+        &glyphs, (ff_utf32_str_t){.data = dest, .size = 15},
         (ff_print_params_t){
             .typography = (ff_typography_t){.font = regular_font,
                                             .size = 12.f,
                                             .color = 0xffffffff},
             .print_flags = ff_get_default_print_flags(),
-            .characteristics = ff_get_default_characteristics()},
+            .characteristics = ff_get_default_characteristics(),
+            .draw_spaces = false},
+
         (ff_position_t){.x = 100, .y = 200});
 
     // auto italic_font = ff_new_font(kitalic_font_path);
@@ -136,14 +137,15 @@ int main() {
 
     for (; !glfwWindowShouldClose(window);) {
         glClear(GL_COLOR_BUFFER_BIT);
-        ff_draw(regular_font, glyphs.data, glyphs.size, (float*)projection);
-    //     }
-    //     // { (void)ff_draw(italic_font, vertical_line, (float
-    //     // *)projection); }
+        ff_draw(regular_font, glyphs.data, glyphs.size,
+                (float *)projection);
+        //     }
+        //     // { (void)ff_draw(italic_font, vertical_line, (float
+        //     // *)projection); }
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
-    ff_glyphs_vector_free(&glyphs);
+    ff_glyphs_vector_destroy(&glyphs);
 
     ff_terminate();
     DestroyGlCtx();
