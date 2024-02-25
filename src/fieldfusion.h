@@ -23,35 +23,35 @@ typedef unsigned int uint;
 
 typedef int ff_font_handle_t;
 
-typedef struct {
+struct ff_map_item {
     FT_ULong codepoint;
     int codepoint_index;
     float advance[2];
-} ff_map_item_t;
+};
 
-typedef struct ht_codepoint_next_entry_t {
+struct ht_codepoint_entry {
     bool not_empty;
     int key;
-    ff_map_item_t value;
-    struct ht_codepoint_next_entry_t *next;
-} ht_codepoint_entry_t;
+    struct ff_map_item value;
+    struct ht_codepoint_entry *next;
+};
 
-typedef struct {
-    ht_codepoint_entry_t *entries;
-} ht_codepoint_map_t;
+struct ht_codepoint_map {
+    struct ht_codepoint_entry *entries;
+};
 
-typedef struct {
-    ff_map_item_t extended_ascii_[0xff];
-    ht_codepoint_map_t codepoint_map;
-} ff_map_t;
+struct ff_map {
+    struct ff_map_item extended_ascii_[0xff];
+    struct ht_codepoint_map codepoint_map;
+};
 
-typedef struct {
+struct ff_font {
     const char *font_path;
     float scale;
     float range;
     float vertical_advance;
 
-    ff_map_t character_index;
+    struct ff_map character_index;
 
     /**
      * FreeType Face handle.
@@ -65,9 +65,9 @@ typedef struct {
     uint point_input_buffer;
     uint meta_input_texture;
     uint point_input_texture;
-} ff_font_t;
+};
 
-typedef struct {
+struct ff_atlas {
     int refcount; /* Amount of fonts using this atlas */
     int implicit; /* Set to 1 if the atlas was created automatically
                      and not by user */
@@ -115,14 +115,14 @@ typedef struct {
      * Amount of pixels to leave blank between MSDF bitmaps.
      */
     int padding;
-} ff_atlas_t;
+};
 
-typedef struct {
+struct ff_position {
     float x;
     float y;
-} ff_position_t;
+};
 
-typedef struct {
+struct ff_characteristics {
     /**
      * Y offset (for e.g. subscripts and superscripts).
      */
@@ -141,13 +141,13 @@ typedef struct {
      * effect without loading a separate font atlas.
      */
     float strength;
-} ff_characteristics_t;
+};
 
-typedef struct {
+struct ff_glyph {
     /**
      * X and Y coordinates in in the projection coordinates.
      */
-    ff_position_t position;
+    struct ff_position position;
 
     /**
      * The color of the character in 0xRRGGBBAA format.
@@ -163,110 +163,119 @@ typedef struct {
      * Font size to use for rendering of this character.
      */
     float size;
-    ff_characteristics_t characteristics;
-} ff_glyph_t;
+    struct ff_characteristics characteristics;
+};
 
-typedef struct {
-    ff_font_t font;
-    ff_atlas_t atlas;
-} ff_font_texture_pack_t;
+struct ff_font_texture_pack {
+    struct ff_font font;
+    struct ff_atlas atlas;
+};
 
-typedef struct ht_fpack_next_entry_t {
+struct ht_fpack_entry {
     bool not_empty;
     int key;
-    ff_font_texture_pack_t value;
-    struct ht_fpack_next_entry_t *next;
-} ht_fpack_entry_t;
+    struct ff_font_texture_pack value;
+    struct ht_fpack_entry *next;
+};
 
-typedef struct {
-    ht_fpack_entry_t *entries;
-} ht_fpack_map_t;
+struct ht_fpack_map {
+    struct ht_fpack_entry *entries;
+};
 
-typedef struct {
+struct ff_dimensions {
     float width;
     float height;
-} ff_dimensions_t;
+};
 
-typedef struct {
+struct ff_typography {
     ff_font_handle_t font;
     float size;
     uint32_t color;
-} ff_typography_t;
+};
 
-typedef struct {
-    ff_glyph_t *data;
+struct ff_glyphs_vector {
+    struct ff_glyph *data;
     ulong size;
     ulong capacity;
-} ff_glyphs_vector_t;
+};
 
-typedef struct {
+struct ff_font_config {
     float scale;
     float range;
     int texture_width;
     int texture_padding;
-} ff_font_config_t;
+};
 
-typedef enum {
+enum ff_print_options {
     ff_print_options_enable_kerning = 0x2,
     ff_print_options_print_vertically = 0x4,
-} ff_print_options_t;
+};
 
-typedef struct {
+struct ff_utf8_str {
     char *data;
     ulong size;
-} ff_utf8_str_t;
+};
 
-typedef struct {
+struct ff_utf32_str {
     char32_t *data;
     ulong size;
-} ff_utf32_str_t;
+};
 
-typedef struct {
-    ff_typography_t typography;
+struct ff_print_params {
+    struct ff_typography typography;
     int print_flags;
-    ff_characteristics_t characteristics;
+    struct ff_characteristics characteristics;
     bool draw_spaces;
-} ff_print_params_t;
+};
 
-typedef struct {
+struct ff_ortho_params {
     float scr_left;
     float scr_right;
     float scr_bottom;
     float scr_top;
     float near;
     float far;
-} ortho_projection_params_t;
+};
 
 void ff_initialize(const char *version);
 void ff_terminate();
-ff_font_config_t ff_default_font_config(void);
+struct ff_font_config ff_default_font_config(void);
 ff_font_handle_t ff_new_font(const char *path,
-                             ff_font_config_t config);
-void ff_remove_font(ff_font_handle_t handle);
-int ff_gen_glyphs(ff_font_handle_t, char32_t *codepoints,
-                  ulong codepoints_count);
-void ff_draw(ff_font_handle_t, ff_glyph_t *glyphs, ulong glyphs_count,
-             float *projection);
-ff_characteristics_t ff_get_default_characteristics();
+                             const struct ff_font_config config);
+void ff_remove_font(const ff_font_handle_t handle);
+int ff_gen_glyphs(const ff_font_handle_t, const char32_t *codepoints,
+                  const ulong codepoints_count);
+void ff_draw(const ff_font_handle_t, const struct ff_glyph *glyphs,
+             const ulong glyphs_count, const float *projection);
+struct ff_characteristics ff_get_default_characteristics();
 int ff_get_default_print_flags();
-int ff_utf8_to_utf32(char32_t *dest, const char *src, ulong count);
-int ff_utf32_to_utf8(char *dest, const char32_t *src, ulong count);
-void ff_print_utf8(ff_glyphs_vector_t *vec, ff_utf8_str_t str,
-                   ff_print_params_t params, ff_position_t);
-void ff_print_utf32(ff_glyphs_vector_t *vec, ff_utf32_str_t str,
-                    ff_print_params_t params, ff_position_t);
-ff_dimensions_t ff_measure(const ff_font_handle_t, char32_t *str,
-                           ulong str_count, float size,
-                           bool with_kerning);
+int ff_utf8_to_utf32(char32_t *dest, const char *src,
+                     const ulong count);
+int ff_utf32_to_utf8(char *dest, const char32_t *src,
+                     const ulong count);
+void ff_print_utf8(struct ff_glyphs_vector *vec,
+                   const struct ff_utf8_str str,
+                   const struct ff_print_params params,
+                   const struct ff_position);
+void ff_print_utf32(struct ff_glyphs_vector *vec,
+                    const struct ff_utf32_str str,
+                    const struct ff_print_params params,
+                    const struct ff_position);
+struct ff_dimensions ff_measure(const ff_font_handle_t,
+                                const char32_t *str,
+                                const ulong str_count,
+                                const float size,
+                                const bool with_kerning);
 
-void ff_get_ortho_projection(ortho_projection_params_t params,
+void ff_get_ortho_projection(const struct ff_ortho_params params,
                              float dest[][4]);
-ff_glyphs_vector_t ff_glyphs_vector_create();
-void ff_glyphs_vector_destroy(ff_glyphs_vector_t *v);
-void ff_glyphs_vector_push(ff_glyphs_vector_t *v, ff_glyph_t glyph);
-void ff_glyphs_vector_clear(ff_glyphs_vector_t *v);
-void ff_glyphs_vector_cat(ff_glyphs_vector_t *dest,
-                          ff_glyphs_vector_t *src);
+struct ff_glyphs_vector ff_glyphs_vector_create();
+void ff_glyphs_vector_destroy(struct ff_glyphs_vector *v);
+void ff_glyphs_vector_push(struct ff_glyphs_vector *v,
+                           struct ff_glyph glyph);
+void ff_glyphs_vector_clear(struct ff_glyphs_vector *v);
+void ff_glyphs_vector_cat(struct ff_glyphs_vector *dest,
+                          struct ff_glyphs_vector *src);
 
 #ifdef __cplusplus
 }

@@ -24,7 +24,7 @@ extern const char g_msdf_fragment[];
 
 static const float g_serializer_scale = 64;
 
-typedef enum {
+enum ff_serializer_color_t {
     ff_serializer_black_t = 0,
     ff_serializer_red_t = 1,
     ff_serializer_green_t = 2,
@@ -33,14 +33,14 @@ typedef enum {
     ff_serializer_magenta_t = 5,
     ff_serializer_cyan_t = 6,
     ff_serializer_white_t = 7
-} ff_serializer_color_t;
+};
 
-typedef struct {
+struct vec2 {
     float x;
     float y;
-} vec2;
+};
 
-struct GlyphLenCtx {
+struct glyph_len_ctx {
     int meta_size;
     int data_size;
 };
@@ -48,7 +48,7 @@ struct GlyphLenCtx {
 static int ff_serializer_add_contour_size(const FT_Vector *to,
                                           void *user) {
     (void)to;
-    struct GlyphLenCtx *ctx = (struct GlyphLenCtx *)user;
+    struct glyph_len_ctx *ctx = (struct glyph_len_ctx *)user;
     ctx->data_size += 1;
     ctx->meta_size += 2; /* winding + nsegments */
     return 0;
@@ -56,7 +56,7 @@ static int ff_serializer_add_contour_size(const FT_Vector *to,
 static int ff_serializer_add_linear_size(const FT_Vector *to,
                                          void *user) {
     (void)to;
-    struct GlyphLenCtx *ctx = (struct GlyphLenCtx *)user;
+    struct glyph_len_ctx *ctx = (struct glyph_len_ctx *)user;
     ctx->data_size += 1;
     ctx->meta_size += 2; /* color + npoints */
     return 0;
@@ -66,7 +66,7 @@ static int ff_serializer_add_quad_size(const FT_Vector *control,
                                        void *user) {
     (void)control;
     (void)to;
-    struct GlyphLenCtx *ctx = (struct GlyphLenCtx *)user;
+    struct glyph_len_ctx *ctx = (struct glyph_len_ctx *)user;
     ctx->data_size += 2;
     ctx->meta_size += 2; /* color + npoints */
     return 0;
@@ -87,7 +87,7 @@ struct glyph_data_ctx {
     int meta_index;
     char *meta_buffer;
 
-    vec2 *segment;
+    struct vec2 *segment;
     int nsegments_index;
 };
 
@@ -150,21 +150,21 @@ static int ff_serializer_add_quad(const FT_Vector *control,
 }
 
 static void ff_serializer_switch_color(
-    ff_serializer_color_t *color, unsigned long long *seed,
-    ff_serializer_color_t *_banned) {
-    static const ff_serializer_color_t start[3] = {
+    enum ff_serializer_color_t *color, unsigned long long *seed,
+    enum ff_serializer_color_t *_banned) {
+    static const enum ff_serializer_color_t start[3] = {
         ff_serializer_cyan_t, ff_serializer_magenta_t,
         ff_serializer_yellow_t};
-    ff_serializer_color_t banned =
+    enum ff_serializer_color_t banned =
         _banned ? *_banned : ff_serializer_black_t;
-    ff_serializer_color_t combined =
-        (ff_serializer_color_t)((int)*color & (int)banned);
+    enum ff_serializer_color_t combined =
+        (enum ff_serializer_color_t)((int)*color & (int)banned);
 
     if (combined == ff_serializer_red_t ||
         combined == ff_serializer_green_t ||
         combined == ff_serializer_blue_t) {
-        *color = (ff_serializer_color_t)((int)combined ^
-                                         (int)ff_serializer_white_t);
+        *color = (enum ff_serializer_color_t)(
+            (int)combined ^ (int)ff_serializer_white_t);
         return;
     }
     if (*color == ff_serializer_black_t ||
@@ -174,57 +174,61 @@ static void ff_serializer_switch_color(
         return;
     }
     int shifted = (int)(*color) << (1 + (*seed & 1));
-    *color = (ff_serializer_color_t)(((int)(shifted) |
-                                      (int)(shifted) >> 3) &
-                                     (int)(ff_serializer_white_t));
+    *color = (enum ff_serializer_color_t)(
+        ((int)(shifted) | (int)(shifted) >> 3) &
+        (int)(ff_serializer_white_t));
     *seed >>= 1;
 }
 
-static vec2 ff_serializer_mix(const vec2 a, const vec2 b,
-                              float weight) {
-    return (vec2){a.x * (1.0f - weight) + b.x * weight,
-                  a.y * (1.0f - weight) + b.y * weight};
+static struct vec2 ff_serializer_mix(const struct vec2 a,
+                                     const struct vec2 b,
+                                     float weight) {
+    return (struct vec2){a.x * (1.0f - weight) + b.x * weight,
+                         a.y * (1.0f - weight) + b.y * weight};
 }
-static vec2 ff_serializer_subt(vec2 p1, vec2 p2) {
-    return (vec2){p1.x - p2.x, p1.y - p2.y};
+static struct vec2 ff_serializer_subt(struct vec2 p1,
+                                      struct vec2 p2) {
+    return (struct vec2){p1.x - p2.x, p1.y - p2.y};
 }
-static float ff_serializer_length(const vec2 v) {
+static float ff_serializer_length(const struct vec2 v) {
     return (float)sqrt(v.x * v.x + v.y * v.y);
 }
-static vec2 ff_serializer_divide(const vec2 v, float f) {
-    return (vec2){v.x / f, v.y / f};
+static struct vec2 ff_serializer_divide(const struct vec2 v,
+                                        float f) {
+    return (struct vec2){v.x / f, v.y / f};
 }
-static float ff_serializer_cross(vec2 a, vec2 b) {
+static float ff_serializer_cross(struct vec2 a, struct vec2 b) {
     return a.x * b.y - a.y * b.x;
 }
-static float ff_serializer_dot(vec2 a, vec2 b) {
+static float ff_serializer_dot(struct vec2 a, struct vec2 b) {
     return a.x * b.x + a.y * b.y;
 }
-static bool ff_serializer_is_corner(const vec2 a, const vec2 b,
+static bool ff_serializer_is_corner(const struct vec2 a,
+                                    const struct vec2 b,
                                     float cross_threshold) {
     return ff_serializer_dot(a, b) <= 0 ||
            fabs(ff_serializer_cross(a, b)) > cross_threshold;
 }
-static vec2 ff_serializer_normalize(vec2 v) {
+static struct vec2 ff_serializer_normalize(struct vec2 v) {
     return ff_serializer_divide(v, ff_serializer_length(v));
 }
-static vec2 ff_serializer_segment_direction(const vec2 *points,
-                                            int npoints,
-                                            float param) {
+static struct vec2 ff_serializer_segment_direction(
+    const struct vec2 *points, int npoints, float param) {
     return ff_serializer_mix(
         ff_serializer_subt(points[1], points[0]),
         ff_serializer_subt(points[npoints - 1], points[npoints - 2]),
         param);
 }
-static vec2 ff_serializer_segment_point(const vec2 *points,
-                                        int npoints, float param) {
+static struct vec2 ff_serializer_segment_point(
+    const struct vec2 *points, int npoints, float param) {
     return ff_serializer_mix(
         ff_serializer_mix(points[0], points[1], param),
         ff_serializer_mix(points[npoints - 2], points[npoints - 1],
                           param),
         param);
 }
-static float ff_serializer_shoelace(const vec2 a, const vec2 b) {
+static float ff_serializer_shoelace(const struct vec2 a,
+                                    const struct vec2 b) {
     return (b.x - a.x) * (a.y + b.y);
 }
 static int ff_serializer_serialize_glyph(FT_Face face, int code,
@@ -247,14 +251,14 @@ static int ff_serializer_serialize_glyph(FT_Face face, int code,
     /* Start 1 before the actual buffer. The pointer is moved in the
        move_to callback. FT_Outline_Decompose does not have a callback
        for finishing a contour. */
-    ctx.segment = ((vec2 *)&point_buffer[0]) - 1;
+    ctx.segment = ((struct vec2 *)&point_buffer[0]) - 1;
 
     if (FT_Outline_Decompose(&face->glyph->outline, &fns, &ctx))
         return -1;
 
     /* Calculate windings. */
     int meta_index = 0;
-    vec2 *point_ptr = (vec2 *)&point_buffer[0];
+    struct vec2 *point_ptr = (struct vec2 *)&point_buffer[0];
 
     int ncontours = meta_buffer[meta_index++];
     for (int i = 0; i < ncontours; ++i) {
@@ -264,12 +268,12 @@ static int ff_serializer_serialize_glyph(FT_Face face, int code,
         float total = 0;
         if (nsegments == 1) {
             int npoints = meta_buffer[meta_index + 1];
-            vec2 a =
+            struct vec2 a =
                 ff_serializer_segment_point(point_ptr, npoints, 0);
-            vec2 b = ff_serializer_segment_point(point_ptr, npoints,
-                                                 1 / 3.0f);
-            vec2 c = ff_serializer_segment_point(point_ptr, npoints,
-                                                 2 / 3.0f);
+            struct vec2 b = ff_serializer_segment_point(
+                point_ptr, npoints, 1 / 3.0f);
+            struct vec2 c = ff_serializer_segment_point(
+                point_ptr, npoints, 2 / 3.0f);
             total += ff_serializer_shoelace(a, b);
             total += ff_serializer_shoelace(b, c);
             total += ff_serializer_shoelace(c, a);
@@ -279,16 +283,16 @@ static int ff_serializer_serialize_glyph(FT_Face face, int code,
 
         } else if (nsegments == 2) {
             int npoints = meta_buffer[meta_index + 1];
-            vec2 a =
+            struct vec2 a =
                 ff_serializer_segment_point(point_ptr, npoints, 0);
-            vec2 b =
+            struct vec2 b =
                 ff_serializer_segment_point(point_ptr, npoints, 0.5);
             point_ptr += npoints - 1;
             meta_index += 2;
             npoints = meta_buffer[meta_index + 1];
-            vec2 c =
+            struct vec2 c =
                 ff_serializer_segment_point(point_ptr, npoints, 0);
-            vec2 d =
+            struct vec2 d =
                 ff_serializer_segment_point(point_ptr, npoints, 0.5);
             total += ff_serializer_shoelace(a, b);
             total += ff_serializer_shoelace(b, c);
@@ -300,20 +304,20 @@ static int ff_serializer_serialize_glyph(FT_Face face, int code,
         } else {
             int prev_npoints =
                 meta_buffer[meta_index + 2 * (nsegments - 2) + 1];
-            vec2 *prev_ptr = point_ptr;
+            struct vec2 *prev_ptr = point_ptr;
             for (int j = 0; j < nsegments - 1; ++j) {
                 int _npoints = meta_buffer[meta_index + 2 * j + 1];
                 prev_ptr += (_npoints - 1);
             }
-            vec2 prev = ff_serializer_segment_point(prev_ptr,
-                                                    prev_npoints, 0);
+            struct vec2 prev = ff_serializer_segment_point(
+                prev_ptr, prev_npoints, 0);
 
             for (int j = 0; j < nsegments; ++j) {
                 meta_index++; /* Color, leave empty here. */
                 int npoints = meta_buffer[meta_index++];
 
-                vec2 cur = ff_serializer_segment_point(point_ptr,
-                                                       npoints, 0);
+                struct vec2 cur = ff_serializer_segment_point(
+                    point_ptr, npoints, 0);
 
                 total += ff_serializer_shoelace(prev, cur);
                 point_ptr += (npoints - 1);
@@ -329,7 +333,7 @@ static int ff_serializer_serialize_glyph(FT_Face face, int code,
     unsigned long long seed = 0;
 
     meta_index = 0;
-    point_ptr = (vec2 *)&point_buffer[0];
+    point_ptr = (struct vec2 *)&point_buffer[0];
 
     int corners[30];
     int len_corners = 0;
@@ -339,27 +343,29 @@ static int ff_serializer_serialize_glyph(FT_Face face, int code,
         meta_index++; /* Winding */
         int nsegments = meta_buffer[meta_index++];
         int _meta = meta_index;
-        vec2 *_point = point_ptr;
+        struct vec2 *_point = point_ptr;
 
         len_corners = 0; /*clear*/
 
         if (nsegments) {
             int prev_npoints =
                 meta_buffer[meta_index + 2 * (nsegments - 2) + 1];
-            vec2 *prev_ptr = point_ptr;
+            struct vec2 *prev_ptr = point_ptr;
             for (int j = 0; j < nsegments - 1; ++j)
                 prev_ptr += (meta_buffer[meta_index + 2 * j + 1] - 1);
-            vec2 prev_direction = ff_serializer_segment_direction(
-                prev_ptr, prev_npoints, 1);
+            struct vec2 prev_direction =
+                ff_serializer_segment_direction(prev_ptr,
+                                                prev_npoints, 1);
             int index = 0;
-            vec2 *cur_points = point_ptr;
+            struct vec2 *cur_points = point_ptr;
             for (int j = 0; j < nsegments; ++j, ++index) {
                 meta_index++; /* Color, leave empty here. */
                 int npoints = meta_buffer[meta_index++];
 
-                vec2 cur_direction = ff_serializer_segment_direction(
-                    cur_points, npoints, 0.0);
-                vec2 new_prev_direction =
+                struct vec2 cur_direction =
+                    ff_serializer_segment_direction(cur_points,
+                                                    npoints, 0.0);
+                struct vec2 new_prev_direction =
                     ff_serializer_segment_direction(cur_points,
                                                     npoints, 1.0);
 
@@ -385,8 +391,8 @@ static int ff_serializer_serialize_glyph(FT_Face face, int code,
             }
         } else if (len_corners == 1) {
             /* Teardrop */
-            ff_serializer_color_t colors[3] = {ff_serializer_white_t,
-                                               ff_serializer_white_t};
+            enum ff_serializer_color_t colors[3] = {
+                ff_serializer_white_t, ff_serializer_white_t};
             ff_serializer_switch_color(&colors[0], &seed, NULL);
             colors[2] = colors[0];
             ff_serializer_switch_color(&colors[2], &seed, NULL);
@@ -395,7 +401,7 @@ static int ff_serializer_serialize_glyph(FT_Face face, int code,
             if (nsegments >= 3) {
                 int m = nsegments;
                 for (int i = 0; i < m; ++i) {
-                    ff_serializer_color_t c =
+                    enum ff_serializer_color_t c =
                         (colors + 1)[(int)(3 + 2.875 * i / (m - 1) -
                                            1.4375 + .5) -
                                      3];
@@ -412,19 +418,19 @@ static int ff_serializer_serialize_glyph(FT_Face face, int code,
             int spline = 0;
             int start = corners[0];
             int m = nsegments;
-            ff_serializer_color_t color = ff_serializer_white_t;
+            enum ff_serializer_color_t color = ff_serializer_white_t;
             ff_serializer_switch_color(&color, &seed, NULL);
-            ff_serializer_color_t initial_color = color;
+            enum ff_serializer_color_t initial_color = color;
             for (int i = 0; i < m; ++i) {
                 int index = (start + i) % m;
 
                 if (spline + 1 < corner_count &&
                     corners[spline + 1] == index) {
                     ++spline;
-                    ff_serializer_color_t banned =
-                        (ff_serializer_color_t)((spline ==
-                                                 corner_count - 1) *
-                                                initial_color);
+                    enum ff_serializer_color_t banned =
+                        (enum ff_serializer_color_t)(
+                            (spline == corner_count - 1) *
+                            initial_color);
                     ff_serializer_switch_color(&color, &seed,
                                                &banned);
                 }
@@ -462,7 +468,7 @@ void glyph_buffer_size(FT_Face face, int code, size_t *meta_size,
     fns.line_to = ff_serializer_add_linear_size;
     fns.conic_to = ff_serializer_add_quad_size;
     fns.cubic_to = ff_serializer_add_cubic_size;
-    struct GlyphLenCtx ctx = {1, 0};
+    struct glyph_len_ctx ctx = {1, 0};
     int decompose_err =
         !FT_Outline_Decompose(&face->glyph->outline, &fns, &ctx);
     assert("FT_Outline_Decompos failed" && decompose_err);
@@ -472,7 +478,7 @@ void glyph_buffer_size(FT_Face face, int code, size_t *meta_size,
 }
 // field fusion //
 
-typedef struct {
+struct ff_index_entry_t {
     float offset_x;
     float offset_y;
     float size_x;
@@ -481,7 +487,7 @@ typedef struct {
     float bearing_y;
     float glyph_width;
     float glyph_height;
-} ff_index_entry_t;
+};
 
 static const GLfloat kmat4_zero_init[4][4] = {
     {0.0f, 0.0f, 0.0f, 0.0f},
@@ -524,7 +530,7 @@ static void gen_extended_ascii(const ff_font_handle_t font_handle) {
     ff_gen_glyphs(font_handle, codepoints, 0xff);
 }
 
-typedef struct {
+struct ff_uniforms {
     int window_projection;
     int font_atlas_projection;
     int index;
@@ -543,65 +549,67 @@ typedef struct {
     int point_offset;
     int metadata;
     int point_data;
-} ff_uniforms_t;
+};
 
 static FT_Library g_ft_library;
 static float g_dpi[2];
 static uint g_gen_shader;
 static uint g_render_shader;
-static ff_uniforms_t g_uniforms;
+static struct ff_uniforms g_uniforms;
 static uint g_bbox_vao;
 static uint g_bbox_vbo;
 static int g_max_texture_size;
 static size_t g_max_handle = 0;
-static ht_fpack_map_t g_fonts;
+static struct ht_fpack_map g_fonts;
 
 // NLM
 
-ff_glyphs_vector_t ff_glyphs_vector_create() {
+struct ff_glyphs_vector ff_glyphs_vector_create() {
     ulong initial_size = 2;
-    ulong elem_size = sizeof(ff_glyph_t);
-    ff_glyphs_vector_t result = {
-        .data = (ff_glyph_t *)calloc(elem_size, initial_size),
+    ulong elem_size = sizeof(struct ff_glyph);
+    return (struct ff_glyphs_vector){
+        .data = calloc(elem_size, initial_size),
         .size = 0,
         .capacity = elem_size * initial_size};
-    return result;
 }
 
-void ff_glyphs_vector_destroy(ff_glyphs_vector_t *v) {
+void ff_glyphs_vector_destroy(struct ff_glyphs_vector *v) {
     free(v->data);
     v->data = 0;
     v->size = 0;
     v->capacity = 0;
 }
 
-void ff_glyphs_vector_push(ff_glyphs_vector_t *v, ff_glyph_t glyph) {
-    ulong new_size = sizeof(ff_glyph_t) * (v->size + 1);
+void ff_glyphs_vector_push(struct ff_glyphs_vector *v,
+                           struct ff_glyph glyph) {
+    ulong new_size = sizeof(struct ff_glyph) * (v->size + 1);
 
     if (new_size > v->capacity) {
         v->capacity *= 2;
-        v->data = (ff_glyph_t *)realloc(v->data, v->capacity);
+        v->data = (struct ff_glyph *)realloc(v->data, v->capacity);
         assert(v->data != NULL && "bad alloc");
     }
 
     v->data[v->size++] = glyph;
 }
 
-void ff_glyphs_vector_cat(ff_glyphs_vector_t *dest,
-                          ff_glyphs_vector_t *src) {
-    ulong elem_size = sizeof(ff_glyph_t);
+void ff_glyphs_vector_cat(struct ff_glyphs_vector *dest,
+                          struct ff_glyphs_vector *src) {
+    ulong elem_size = sizeof(struct ff_glyph);
     ulong src_size = src->size * elem_size;
 
     if (src_size > dest->capacity) {
         dest->capacity += src_size;
         dest->data =
-            (ff_glyph_t *)realloc(dest->data, dest->capacity);
+            (struct ff_glyph *)realloc(dest->data, dest->capacity);
     }
 
     memcpy(dest->data + dest->size, src->data, src_size);
 }
 
-void ff_glyphs_vector_clear(ff_glyphs_vector_t *v) { v->size = 0; }
+void ff_glyphs_vector_clear(struct ff_glyphs_vector *v) {
+    v->size = 0;
+}
 
 static const uint ht_fpack_table_size = 0x200;
 
@@ -613,13 +621,13 @@ unsigned int ff_ht_int_hash(int key) {
     return value;
 }
 
-bool ht_fpack_map_entry_empty(ht_fpack_entry_t *entry) {
+bool ht_fpack_map_entry_empty(struct ht_fpack_entry *entry) {
     return !entry->not_empty;
 }
 
-ht_fpack_entry_t ht_fpack_map_entry_new(
-    int key, const ff_font_texture_pack_t value) {
-    ht_fpack_entry_t result = {
+struct ht_fpack_entry ht_fpack_map_entry_new(
+    int key, const struct ff_font_texture_pack value) {
+    struct ht_fpack_entry result = {
         .not_empty = true,
         .key = key,
         .value = value,
@@ -628,38 +636,38 @@ ht_fpack_entry_t ht_fpack_map_entry_new(
     return result;
 }
 
-void ht_fpack_map_entry_free(ht_fpack_entry_t entry) {
+void ht_fpack_map_entry_free(struct ht_fpack_entry entry) {
     // TODO FIX
-    ht_fpack_entry_t *head = entry.next;
+    struct ht_fpack_entry *head = entry.next;
     while (head != NULL) {
-        ht_fpack_entry_t *tmp = head;
+        struct ht_fpack_entry *tmp = head;
         head = head->next;
         free(tmp);
     }
 }
 
-ht_fpack_map_t ht_fpack_map_create() {
-    ht_fpack_map_t hashtable = {0};
+struct ht_fpack_map ht_fpack_map_create() {
+    struct ht_fpack_map hashtable = {0};
 
-    hashtable.entries = (ht_fpack_entry_t *)calloc(
-        ht_fpack_table_size, sizeof(ht_fpack_entry_t));
+    hashtable.entries = (struct ht_fpack_entry *)calloc(
+        ht_fpack_table_size, sizeof(struct ht_fpack_entry));
 
     return hashtable;
 }
 
-void ht_fpack_map_set(ht_fpack_map_t *hashtable, int key,
-                      ff_font_texture_pack_t value) {
+void ht_fpack_map_set(struct ht_fpack_map *hashtable, int key,
+                      struct ff_font_texture_pack value) {
     unsigned int slot = ff_ht_int_hash(key) % ht_fpack_table_size;
 
-    ht_fpack_entry_t *entry = &hashtable->entries[slot];
+    struct ht_fpack_entry *entry = &hashtable->entries[slot];
 
     if (ht_fpack_map_entry_empty(entry)) {
         hashtable->entries[slot] = ht_fpack_map_entry_new(key, value);
         return;
     }
 
-    ht_fpack_entry_t *prev = {0};
-    ht_fpack_entry_t *head = entry;
+    struct ht_fpack_entry *prev = {0};
+    struct ht_fpack_entry *head = entry;
 
     while (head != NULL) {
         if (head->key == key) {
@@ -672,23 +680,23 @@ void ht_fpack_map_set(ht_fpack_map_t *hashtable, int key,
         head = prev->next;
     }
 
-    prev->next =
-        (ht_fpack_entry_t *)calloc(1, sizeof(ht_fpack_entry_t));
-    ht_fpack_entry_t next = ht_fpack_map_entry_new(key, value);
-    memcpy(prev->next, &next, sizeof(ht_fpack_entry_t));
+    prev->next = (struct ht_fpack_entry *)calloc(
+        1, sizeof(struct ht_fpack_entry));
+    struct ht_fpack_entry next = ht_fpack_map_entry_new(key, value);
+    memcpy(prev->next, &next, sizeof(struct ht_fpack_entry));
 }
 
-ff_font_texture_pack_t *ht_fpack_map_get(ht_fpack_map_t *hashtable,
-                                         int key) {
+struct ff_font_texture_pack *ht_fpack_map_get(
+    struct ht_fpack_map *hashtable, int key) {
     unsigned int slot = ff_ht_int_hash(key) % ht_fpack_table_size;
 
-    ht_fpack_entry_t *entry = &hashtable->entries[slot];
+    struct ht_fpack_entry *entry = &hashtable->entries[slot];
 
     if (ht_fpack_map_entry_empty(entry)) {
         return NULL;
     }
 
-    ht_fpack_entry_t *head = entry;
+    struct ht_fpack_entry *head = entry;
     while (head != NULL) {
         if (head->key == key) {
             return &head->value;
@@ -701,9 +709,9 @@ ff_font_texture_pack_t *ht_fpack_map_get(ht_fpack_map_t *hashtable,
     return NULL;
 }
 
-void ht_fpack_map_free(ht_fpack_map_t *ht) {
+void ht_fpack_map_free(struct ht_fpack_map *ht) {
     for (ulong i = 0; i < ht_fpack_table_size; ++i) {
-        ht_fpack_entry_t entry = ht->entries[i];
+        struct ht_fpack_entry entry = ht->entries[i];
 
         if (ht_fpack_map_entry_empty(&entry)) continue;
 
@@ -716,13 +724,13 @@ void ht_fpack_map_free(ht_fpack_map_t *ht) {
 
 static const uint ht_codepoint_table_size = 0x200;
 
-bool ht_codepoint_map_entry_empty(ht_codepoint_entry_t *entry) {
+bool ht_codepoint_map_entry_empty(struct ht_codepoint_entry *entry) {
     return !entry->not_empty;
 }
 
-ht_codepoint_entry_t ht_codepoint_map_entry_new(int key,
-                                                ff_map_item_t value) {
-    ht_codepoint_entry_t result = {
+struct ht_codepoint_entry ht_codepoint_map_entry_new(
+    int key, struct ff_map_item value) {
+    struct ht_codepoint_entry result = {
         .not_empty = true,
         .key = key,
         .value = value,
@@ -731,29 +739,29 @@ ht_codepoint_entry_t ht_codepoint_map_entry_new(int key,
     return result;
 }
 
-void ht_codepoint_map_entry_free(ht_codepoint_entry_t entry) {
-    ht_codepoint_entry_t *head = entry.next;
+void ht_codepoint_map_entry_free(struct ht_codepoint_entry entry) {
+    struct ht_codepoint_entry *head = entry.next;
     while (head != NULL) {
-        ht_codepoint_entry_t *tmp = head;
+        struct ht_codepoint_entry *tmp = head;
         head = head->next;
         free(tmp);
     }
 }
 
-ht_codepoint_map_t ht_codepoint_map_create() {
-    ht_codepoint_map_t hashtable = {0};
+struct ht_codepoint_map ht_codepoint_map_create() {
+    struct ht_codepoint_map hashtable = {0};
 
-    hashtable.entries = (ht_codepoint_entry_t *)calloc(
-        ht_codepoint_table_size, sizeof(ht_codepoint_entry_t));
+    hashtable.entries = (struct ht_codepoint_entry *)calloc(
+        ht_codepoint_table_size, sizeof(struct ht_codepoint_entry));
 
     return hashtable;
 }
 
-void ht_codepoint_map_set(ht_codepoint_map_t *hashtable, int key,
-                          ff_map_item_t value) {
+void ht_codepoint_map_set(struct ht_codepoint_map *hashtable, int key,
+                          struct ff_map_item value) {
     unsigned int slot = ff_ht_int_hash(key) % ht_codepoint_table_size;
 
-    ht_codepoint_entry_t *entry = &hashtable->entries[slot];
+    struct ht_codepoint_entry *entry = &hashtable->entries[slot];
 
     if (ht_codepoint_map_entry_empty(entry)) {
         hashtable->entries[slot] =
@@ -761,8 +769,8 @@ void ht_codepoint_map_set(ht_codepoint_map_t *hashtable, int key,
         return;
     }
 
-    ht_codepoint_entry_t *prev = {0};
-    ht_codepoint_entry_t *head = entry;
+    struct ht_codepoint_entry *prev = {0};
+    struct ht_codepoint_entry *head = entry;
 
     while (head != NULL) {
         if (head->key == key) {
@@ -775,24 +783,24 @@ void ht_codepoint_map_set(ht_codepoint_map_t *hashtable, int key,
         head = prev->next;
     }
 
-    prev->next = (ht_codepoint_entry_t *)calloc(
-        1, sizeof(ht_codepoint_entry_t));
-    ht_codepoint_entry_t next =
+    prev->next = (struct ht_codepoint_entry *)calloc(
+        1, sizeof(struct ht_codepoint_entry));
+    struct ht_codepoint_entry next =
         ht_codepoint_map_entry_new(key, value);
-    memcpy(prev->next, &next, sizeof(ht_codepoint_entry_t));
+    memcpy(prev->next, &next, sizeof(struct ht_codepoint_entry));
 }
 
-ff_map_item_t *ht_codepoint_map_get(ht_codepoint_map_t *hashtable,
-                                    int key) {
+struct ff_map_item *ht_codepoint_map_get(
+    struct ht_codepoint_map *hashtable, int key) {
     unsigned int slot = ff_ht_int_hash(key) % ht_codepoint_table_size;
 
-    ht_codepoint_entry_t *entry = &hashtable->entries[slot];
+    struct ht_codepoint_entry *entry = &hashtable->entries[slot];
 
     if (ht_codepoint_map_entry_empty(entry)) {
         return NULL;
     }
 
-    ht_codepoint_entry_t *head = entry;
+    struct ht_codepoint_entry *head = entry;
     while (head != NULL) {
         if (head->key == key) {
             return &head->value;
@@ -805,9 +813,9 @@ ff_map_item_t *ht_codepoint_map_get(ht_codepoint_map_t *hashtable,
     return NULL;
 }
 
-void ht_codepoint_map_free(ht_codepoint_map_t *ht) {
+void ht_codepoint_map_free(struct ht_codepoint_map *ht) {
     for (ulong i = 0; i < ht_codepoint_table_size; ++i) {
-        ht_codepoint_entry_t entry = ht->entries[i];
+        struct ht_codepoint_entry entry = ht->entries[i];
 
         if (ht_codepoint_map_entry_empty(&entry)) continue;
 
@@ -816,7 +824,7 @@ void ht_codepoint_map_free(ht_codepoint_map_t *ht) {
     free(ht->entries);
 }
 
-void ff_get_ortho_projection(ortho_projection_params_t params,
+void ff_get_ortho_projection(const struct ff_ortho_params params,
                              float dest[][4]) {
     GLfloat rl, tb, fn;
 
@@ -949,8 +957,8 @@ void ff_initialize(const char *version) {
     g_fonts = ht_fpack_map_create();
 }
 
-ff_font_config_t ff_default_font_config(void) {
-    return (ff_font_config_t){
+struct ff_font_config ff_default_font_config(void) {
+    return (struct ff_font_config){
         .scale = 2.0f,
         .range = 2.2f,
         .texture_width = 1024,
@@ -959,10 +967,11 @@ ff_font_config_t ff_default_font_config(void) {
 }
 
 ff_font_handle_t ff_new_font(const char *path,
-                             ff_font_config_t config) {
+                             const struct ff_font_config config) {
     ff_font_handle_t handle = g_max_handle;
-    ht_fpack_map_set(&g_fonts, handle, (ff_font_texture_pack_t){0});
-    ff_font_texture_pack_t *fpack =
+    ht_fpack_map_set(&g_fonts, handle,
+                     (struct ff_font_texture_pack){0});
+    struct ff_font_texture_pack *fpack =
         ht_fpack_map_get(&g_fonts, handle);
     fpack->font.font_path = path;
     fpack->font.scale = config.scale;
@@ -998,7 +1007,7 @@ ff_font_handle_t ff_new_font(const char *path,
 }
 
 void ff_remove_font(const ff_font_handle_t handle) {
-    ff_font_texture_pack_t *fpack =
+    struct ff_font_texture_pack *fpack =
         ht_fpack_map_get(&g_fonts, handle);
     if (fpack == NULL) return;
     FT_Done_Face(fpack->font.face);
@@ -1015,9 +1024,9 @@ void ff_remove_font(const ff_font_handle_t handle) {
     // _fonts.erase(handle);  // TODO
 }
 
-ff_map_item_t *ff_map_get(ff_map_t *o, char32_t codepoint) {
+struct ff_map_item *ff_map_get(struct ff_map *o, char32_t codepoint) {
     if (codepoint < 0xff) return &o->extended_ascii_[codepoint];
-    ff_map_item_t *item =
+    struct ff_map_item *item =
         ht_codepoint_map_get(&o->codepoint_map, codepoint);
     if (item != NULL) {
         return item;
@@ -1025,7 +1034,8 @@ ff_map_item_t *ff_map_get(ff_map_t *o, char32_t codepoint) {
     return NULL;
 }
 
-ff_map_item_t *ff_map_insert(ff_map_t *o, const char32_t codepoint) {
+struct ff_map_item *ff_map_insert(struct ff_map *o,
+                                  const char32_t codepoint) {
     if (codepoint < 0xff) {
         o->extended_ascii_[codepoint].codepoint = codepoint;
         o->extended_ascii_[codepoint].codepoint_index =
@@ -1034,14 +1044,15 @@ ff_map_item_t *ff_map_insert(ff_map_t *o, const char32_t codepoint) {
     }
 
     ht_codepoint_map_set(&o->codepoint_map, codepoint,
-                         (ff_map_item_t){0});
-    ff_map_item_t *item =
+                         (struct ff_map_item){0});
+    struct ff_map_item *item =
         ht_codepoint_map_get(&o->codepoint_map, codepoint);
     return item;
 }
 
-int ff_gen_glyphs(ff_font_handle_t handle, char32_t *codepoints,
-                  ulong codepoints_count) {
+int ff_gen_glyphs(const ff_font_handle_t handle,
+                  const char32_t *codepoints,
+                  const ulong codepoints_count) {
     GLint original_viewport[4];
     glGetIntegerv(GL_VIEWPORT, original_viewport);
 
@@ -1050,12 +1061,12 @@ int ff_gen_glyphs(ff_font_handle_t handle, char32_t *codepoints,
 
     if (nrender <= 0) return -1;
 
-    ff_font_texture_pack_t *fpack =
+    struct ff_font_texture_pack *fpack =
         ht_fpack_map_get(&g_fonts, handle);
     assert(fpack != NULL);
 
     size_t *meta_sizes = NULL, *point_sizes = NULL;
-    ff_index_entry_t *atlas_index = NULL;
+    struct ff_index_entry_t *atlas_index = NULL;
     void *point_data = NULL, *metadata = NULL;
 
     /* We will start with a square texture. */
@@ -1071,8 +1082,8 @@ int ff_gen_glyphs(ff_font_handle_t handle, char32_t *codepoints,
     assert(point_sizes);
 
     /* Amount of new memory needed for the index. */
-    size_t index_size = nrender * sizeof(ff_index_entry_t);
-    atlas_index = (ff_index_entry_t *)calloc(1, index_size);
+    size_t index_size = nrender * sizeof(struct ff_index_entry_t);
+    atlas_index = (struct ff_index_entry_t *)calloc(1, index_size);
     assert(atlas_index);
 
     size_t meta_size_sum = 0, point_size_sum = 0;
@@ -1100,7 +1111,7 @@ int ff_gen_glyphs(ff_font_handle_t handle, char32_t *codepoints,
         int index = codepoints[i];
         ff_serializer_serialize_glyph(fpack->font.face, index,
                                       meta_ptr, (GLfloat *)point_ptr);
-        ff_map_item_t *m =
+        struct ff_map_item *m =
             ff_map_insert(&fpack->font.character_index, index);
         m->codepoint_index = fpack->atlas.nglyphs + i;
         m->advance[0] =
@@ -1174,24 +1185,26 @@ int ff_gen_glyphs(ff_font_handle_t handle, char32_t *codepoints,
         glGenBuffers(1, &new_buffer);
         glBindBuffer(GL_ARRAY_BUFFER, new_buffer);
         glBufferData(GL_ARRAY_BUFFER,
-                     sizeof(ff_index_entry_t) * new_index_size, 0,
-                     GL_DYNAMIC_READ);
+                     sizeof(struct ff_index_entry_t) * new_index_size,
+                     0, GL_DYNAMIC_READ);
         assert(glGetError() != GL_OUT_OF_MEMORY);
         if (fpack->atlas.nglyphs) {
             glBindBuffer(GL_COPY_READ_BUFFER,
                          fpack->atlas.index_buffer);
-            glCopyBufferSubData(
-                GL_COPY_READ_BUFFER, GL_ARRAY_BUFFER, 0, 0,
-                fpack->atlas.nglyphs * sizeof(ff_index_entry_t));
+            glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_ARRAY_BUFFER,
+                                0, 0,
+                                fpack->atlas.nglyphs *
+                                    sizeof(struct ff_index_entry_t));
             glBindBuffer(GL_COPY_READ_BUFFER, 0);
         }
         fpack->atlas.nallocated = new_index_size;
         glDeleteBuffers(1, &fpack->atlas.index_buffer);
         fpack->atlas.index_buffer = new_buffer;
     }
-    glBufferSubData(GL_ARRAY_BUFFER,
-                    sizeof(ff_index_entry_t) * fpack->atlas.nglyphs,
-                    index_size, atlas_index);
+    glBufferSubData(
+        GL_ARRAY_BUFFER,
+        sizeof(struct ff_index_entry_t) * fpack->atlas.nglyphs,
+        index_size, atlas_index);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
@@ -1273,12 +1286,12 @@ int ff_gen_glyphs(ff_font_handle_t handle, char32_t *codepoints,
 
     GLfloat framebuffer_projection[4][4];
     ff_get_ortho_projection(
-        (ortho_projection_params_t){
+        (struct ff_ortho_params){
             0, (GLfloat)fpack->atlas.texture_width, 0,
             (GLfloat)fpack->atlas.texture_height, -1.0, 1.0},
         framebuffer_projection);
     ff_get_ortho_projection(
-        (ortho_projection_params_t){
+        (struct ff_ortho_params){
             -(GLfloat)fpack->atlas.texture_width,
             (GLfloat)fpack->atlas.texture_width,
             -(GLfloat)fpack->atlas.texture_height,
@@ -1319,7 +1332,7 @@ int ff_gen_glyphs(ff_font_handle_t handle, char32_t *codepoints,
     int meta_offset = 0;
     int point_offset = 0;
     for (int i = 0; i < nrender; ++i) {
-        ff_index_entry_t g = atlas_index[i];
+        struct ff_index_entry_t g = atlas_index[i];
         float w = g.size_x;
         float h = g.size_y;
         GLfloat bounding_box[] = {0, 0, w, 0, 0, h, 0, h, w, 0, w, h};
@@ -1375,9 +1388,10 @@ int ff_gen_glyphs(ff_font_handle_t handle, char32_t *codepoints,
     return retval;
 }
 
-void ff_draw(ff_font_handle_t handle, ff_glyph_t *glyphs,
-             ulong glyphs_count, float *projection) {
-    ff_font_texture_pack_t *fpack =
+void ff_draw(const ff_font_handle_t handle,
+             const struct ff_glyph *glyphs, const ulong glyphs_count,
+             const float *projection) {
+    struct ff_font_texture_pack *fpack =
         ht_fpack_map_get(&g_fonts, handle);
 
     GLuint glyph_buffer;
@@ -1386,8 +1400,9 @@ void ff_draw(ff_font_handle_t handle, ff_glyph_t *glyphs,
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, glyph_buffer);
-    glBufferData(GL_ARRAY_BUFFER, glyphs_count * sizeof(ff_glyph_t),
-                 &glyphs[0], GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER,
+                 glyphs_count * sizeof(struct ff_glyph), &glyphs[0],
+                 GL_DYNAMIC_DRAW);
 
     glEnableVertexAttribArray(0);
     glEnableVertexAttribArray(1);
@@ -1397,31 +1412,33 @@ void ff_draw(ff_font_handle_t handle, ff_glyph_t *glyphs,
     glEnableVertexAttribArray(5);
     glEnableVertexAttribArray(6);
 
-    void *position_offset = (void *)offsetof(ff_glyph_t, position.x);
-    void *color_offset = (void *)offsetof(ff_glyph_t, color);
-    void *codepoint_offset = (void *)offsetof(ff_glyph_t, codepoint);
-    void *size_offset = (void *)offsetof(ff_glyph_t, size);
+    void *position_offset =
+        (void *)offsetof(struct ff_glyph, position.x);
+    void *color_offset = (void *)offsetof(struct ff_glyph, color);
+    void *codepoint_offset =
+        (void *)offsetof(struct ff_glyph, codepoint);
+    void *size_offset = (void *)offsetof(struct ff_glyph, size);
     void *offset_offset =
-        (void *)offsetof(ff_glyph_t, characteristics.offset);
+        (void *)offsetof(struct ff_glyph, characteristics.offset);
     void *skew_offset =
-        (void *)offsetof(ff_glyph_t, characteristics.skew);
+        (void *)offsetof(struct ff_glyph, characteristics.skew);
     void *strength_offset =
-        (void *)offsetof(ff_glyph_t, characteristics.strength);
+        (void *)offsetof(struct ff_glyph, characteristics.strength);
 
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE,
-                          sizeof(ff_glyph_t), position_offset);
-    glVertexAttribIPointer(1, 4, GL_UNSIGNED_BYTE, sizeof(ff_glyph_t),
-                           color_offset);
-    glVertexAttribIPointer(2, 1, GL_INT, sizeof(ff_glyph_t),
+                          sizeof(struct ff_glyph), position_offset);
+    glVertexAttribIPointer(1, 4, GL_UNSIGNED_BYTE,
+                           sizeof(struct ff_glyph), color_offset);
+    glVertexAttribIPointer(2, 1, GL_INT, sizeof(struct ff_glyph),
                            codepoint_offset);
     glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE,
-                          sizeof(ff_glyph_t), size_offset);
+                          sizeof(struct ff_glyph), size_offset);
     glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE,
-                          sizeof(ff_glyph_t), offset_offset);
+                          sizeof(struct ff_glyph), offset_offset);
     glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE,
-                          sizeof(ff_glyph_t), skew_offset);
+                          sizeof(struct ff_glyph), skew_offset);
     glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE,
-                          sizeof(ff_glyph_t), strength_offset);
+                          sizeof(struct ff_glyph), strength_offset);
 
     /* Enable gamma correction if user didn't enabled it */
     bool is_srgb_enabled = glIsEnabled(GL_FRAMEBUFFER_SRGB);
@@ -1478,8 +1495,8 @@ void ff_draw(ff_font_handle_t handle, ff_glyph_t *glyphs,
     glDeleteVertexArrays(1, &vao);
 }
 
-ff_characteristics_t ff_get_default_characteristics() {
-    return (ff_characteristics_t){
+struct ff_characteristics ff_get_default_characteristics() {
+    return (struct ff_characteristics){
         .offset = 0.f, .skew = 0.f, .strength = .5f};
 }
 
@@ -1487,53 +1504,62 @@ int ff_get_default_print_flags() {
     return ff_print_options_enable_kerning;
 }
 
-int ff_utf8_to_utf32(char32_t *dest, const char *src, ulong count) {
+int ff_utf8_to_utf32(char32_t *dest, const char *src,
+                     const ulong count) {
     mbstate_t state = {0};
     size_t rc;
+    size_t converted = 0;
     while ((rc = mbrtoc32(dest, src, count, &state))) {
         assert(rc != (size_t)-3 && "no surrogate pairs in UTF-32");
         if (rc == (size_t)-1) return -1;  // invalid input
         if (rc == (size_t)-2) return -1;  // truncated in
         src += rc;
         dest += 1;
+        converted += 1;
     }
-    return 0;
+    return converted == count ? 0 : -1;
 }
 
-int ff_utf32_to_utf8(char *dest, const char32_t *src, ulong count) {
+int ff_utf32_to_utf8(char *dest, const char32_t *src,
+                     const ulong count) {
     mbstate_t state = {0};
     char *dest_p = dest;
+    size_t converted = 0;
     for (size_t i = 0; i < count; i += 1) {
         size_t rc = c32rtomb(dest_p, src[i], &state);
         if (rc == (size_t)-1) return -1;
         dest_p += rc;
+        converted += 1;
     }
-    return 0;
+    return converted == count ? 0 : -1;
 }
 
-void ff_print_utf8(ff_glyphs_vector_t *vec, ff_utf8_str_t utf8_string,
-                   ff_print_params_t params, ff_position_t position) {
+void ff_print_utf8(struct ff_glyphs_vector *vec,
+                   const struct ff_utf8_str utf8_string,
+                   const struct ff_print_params params,
+                   const struct ff_position position) {
     char32_t converted_utf32[utf8_string.size];
     ff_utf8_to_utf32(converted_utf32, utf8_string.data,
                      utf8_string.size);
-    ff_utf32_str_t utf32_string = {.data = converted_utf32,
-                                   .size = utf8_string.size};
+    struct ff_utf32_str utf32_string = {.data = converted_utf32,
+                                        .size = utf8_string.size};
     ff_print_utf32(vec, utf32_string, params, position);
 }
 
-void ff_print_utf32(ff_glyphs_vector_t *vec, ff_utf32_str_t str,
-                    ff_print_params_t params,
-                    ff_position_t position) {
-    ff_font_texture_pack_t *fpack =
+void ff_print_utf32(struct ff_glyphs_vector *vec,
+                    const struct ff_utf32_str str,
+                    const struct ff_print_params params,
+                    const struct ff_position position) {
+    struct ff_font_texture_pack *fpack =
         ht_fpack_map_get(&g_fonts, params.typography.font);
-    ff_position_t pos0 = {position.x,
-                          position.y + params.typography.size};
+    struct ff_position pos0 = {position.x,
+                               position.y + params.typography.size};
 
     for (size_t i = 0; i < str.size; i++) {
         // const auto &codepoint = (char32_t)buffer.at(i);
         char32_t codepoint = str.data[i];
 
-        ff_map_item_t *idx =
+        struct ff_map_item *idx =
             ff_map_get(&fpack->font.character_index, codepoint);
         if (idx == NULL) {
             ff_gen_glyphs(params.typography.font, &codepoint, 1);
@@ -1555,9 +1581,9 @@ void ff_print_utf32(ff_glyphs_vector_t *vec, ff_utf32_str_t str,
                 FT_KERNING_UNSCALED, &kerning);
         }
 
-        ff_glyphs_vector_push(vec, (ff_glyph_t){0});
+        ff_glyphs_vector_push(vec, (struct ff_glyph){0});
         if (!(!params.draw_spaces && codepoint == U' ')) {
-            ff_glyph_t *new_glyph = &vec->data[vec->size - 1];
+            struct ff_glyph *new_glyph = &vec->data[vec->size - 1];
 
             new_glyph->position = pos0;
             new_glyph->color = params.typography.color;
@@ -1577,18 +1603,20 @@ void ff_print_utf32(ff_glyphs_vector_t *vec, ff_utf32_str_t str,
     }
 }
 
-ff_dimensions_t ff_measure(const ff_font_handle_t handle,
-                           char32_t *str, ulong str_count, float size,
-                           bool with_kerning) {
-    ff_font_texture_pack_t *fpack =
+struct ff_dimensions ff_measure(const ff_font_handle_t handle,
+                                const char32_t *str,
+                                const ulong str_count,
+                                const float size,
+                                const bool with_kerning) {
+    struct ff_font_texture_pack *fpack =
         ht_fpack_map_get(&g_fonts, handle);
 
-    ff_dimensions_t result = {0};
+    struct ff_dimensions result = {0};
 
     for (size_t i = 0; i < str_count; i++) {
         char32_t codepoint = str[i];
 
-        ff_map_item_t *idx =
+        struct ff_map_item *idx =
             ff_map_get(&fpack->font.character_index, codepoint);
         if (idx == NULL) {
             ff_gen_glyphs(handle, &codepoint, 1);

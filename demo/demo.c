@@ -86,23 +86,24 @@ int main() {
     int regular_font =
         ff_new_font(kregular_font_path, ff_default_font_config());
 
-    ff_glyphs_vector_t glyphs = ff_glyphs_vector_create();
+    struct ff_glyphs_vector glyphs = ff_glyphs_vector_create();
     char32_t dest[16];
     ff_utf8_to_utf32(dest, "    hello world", 15);
     char dest1[16];
     ff_utf32_to_utf8(dest1, dest, 15);
 
     ff_print_utf32(
-        &glyphs, (ff_utf32_str_t){.data = dest, .size = 15},
-        (ff_print_params_t){
-            .typography = (ff_typography_t){.font = regular_font,
-                                            .size = 12.f,
-                                            .color = 0xffffffff},
+        &glyphs, (struct ff_utf32_str){.data = dest, .size = 15},
+        (struct ff_print_params){
+            .typography =
+                (struct ff_typography){.font = regular_font,
+                                         .size = 12.f,
+                                         .color = 0xffffffff},
             .print_flags = ff_get_default_print_flags(),
             .characteristics = ff_get_default_characteristics(),
             .draw_spaces = false},
 
-        (ff_position_t){.x = 100, .y = 200});
+        (struct ff_position){.x = 100, .y = 200});
 
     // auto italic_font = ff_new_font(kitalic_font_path);
 
@@ -127,7 +128,7 @@ int main() {
 
     float projection[4][4];
     ff_get_ortho_projection(
-        (ortho_projection_params_t){.scr_left = 0,
+        (struct ff_ortho_params){.scr_left = 0,
                                     .scr_right = kwindow_width,
                                     .scr_bottom = kwindow_height,
                                     .scr_top = 0,
