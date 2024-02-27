@@ -22,8 +22,6 @@ static const int kwindow_height = 768;
 // static const std::u32string kunicode_text =
 //     U"Быстрая бурая лиса перепрыгивает через ленивую собаку";
 static const char *kwin_title = "msdf demo";
-static const char *kregular_font_path =
-    "/usr/share/fonts/MapleMono-Regular.ttf";
 // static const char *kitalic_font_path{
 //     "jetbrainsfont/fonts/ttf/JetBrainsMono-MediumItalic.ttf"};
 
@@ -47,44 +45,10 @@ void DestroyGlCtx() {
     glfwTerminate();
 }
 
-// std::u32string to_unicode(const std::string &s) {
-//     std::wstring_convert<std::codecvt_utf8<char32_t>, char32_t>
-//     conv; return conv.from_bytes(s);
-// }
-
-// ff_glyphs_t get_variable_size_glyphs(
-//     const ff_font_handle_t font_handle) {
-//     ff_glyphs_t glyphs;
-//     float y0 = kinitial_font_size;
-//     int size0 = kinitial_font_size;
-//     for (size_t i = 0; i < kline_repeat - 1; i++) {
-//         auto tmp_glyphs = ff_print_unicode(
-//             {font_handle, (float)size0, kwhite}, ktext, {200, y0},
-//             0);
-//         ff_glyphs_cat(glyphs, tmp_glyphs);
-//         size0 += kfont_size_increment;
-//         y0 += size0 + kline_padding;
-//     }
-//     return glyphs;
-// }
-
 int main() {
     InitGlCtx();
-    // std::u32string details =
-    //     U"Vendor : " +
-    //     to_unicode(reinterpret_cast<const char
-    //     *>(glGetString(GL_VENDOR))) + U"\nRenderer : " +
-    //     to_unicode(reinterpret_cast<const char
-    //     *>(glGetString(GL_RENDERER))) + U"\nVersion : " +
-    //     to_unicode(reinterpret_cast<const char
-    //     *>(glGetString(GL_VERSION))) + U"\nShader Language Version
-    //     : " + to_unicode(
-    //         reinterpret_cast<const char
-    //         *>(glGetString(GL_SHADING_LANGUAGE_VERSION)));
 
     ff_initialize("440");
-    int regular_font =
-        ff_new_font(kregular_font_path, ff_default_font_config());
 
     struct ff_glyphs_vector glyphs = ff_glyphs_vector_create();
     char32_t dest[16];
@@ -96,53 +60,27 @@ int main() {
         &glyphs, (struct ff_utf32_str){.data = dest, .size = 15},
         (struct ff_print_params){
             .typography =
-                (struct ff_typography){.font = regular_font,
-                                         .size = 12.f,
-                                         .color = 0xffffffff},
+                (struct ff_typography){
+                    .font = 0, .size = 12.f, .color = 0xffffffff},
             .print_flags = ff_get_default_print_flags(),
             .characteristics = ff_get_default_characteristics(),
             .draw_spaces = false},
 
         (struct ff_position){.x = 100, .y = 200});
 
-    // auto italic_font = ff_new_font(kitalic_font_path);
-
-    // auto glyphs = ff_print_unicode(
-    //     {regular_font, 14, kwhite},
-    //     U"Быстрая бурая лиса перепрыгивает через ленивую собаку",
-    //     {0, 0});
-    // auto detail_glyphs =
-    //     ffPrintUnicode({regular_font, 14, kwhite}, details, {0,
-    //     kwindow_height * 0.5f});
-    // ffGlyphsCat(glyphs, detail_glyphs);
-    // auto unicode_text_glyphs =
-    //     ffPrintUnicode({regular_font, 14.0f, 0xffda09ff},
-    //     kunicode_text,
-    //                      {kwindow_width * 0.5f, kwindow_height *
-    //                      0.5f});
-    // ffGlyphsCat(glyphs, unicode_text_glyphs);
-    // auto vertical_line = ffPrintUnicode(
-    //     {italic_font, 20.0f, 0xff0000ff}, U"Field Fusion",
-    //     {100, 14.0f}, ffPrintOptions::kPrintVertically |
-    //     ffPrintOptions::kEnableKerning);
-
     float projection[4][4];
     ff_get_ortho_projection(
         (struct ff_ortho_params){.scr_left = 0,
-                                    .scr_right = kwindow_width,
-                                    .scr_bottom = kwindow_height,
-                                    .scr_top = 0,
-                                    .near = -1.0f,
-                                    .far = 1.0f},
+                                 .scr_right = kwindow_width,
+                                 .scr_bottom = kwindow_height,
+                                 .scr_top = 0,
+                                 .near = -1.0f,
+                                 .far = 1.0f},
         projection);
 
     for (; !glfwWindowShouldClose(window);) {
         glClear(GL_COLOR_BUFFER_BIT);
-        ff_draw(regular_font, glyphs.data, glyphs.size,
-                (float *)projection);
-        //     }
-        //     // { (void)ff_draw(italic_font, vertical_line, (float
-        //     // *)projection); }
+        ff_draw(0, glyphs.data, glyphs.size, (float *)projection);
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
