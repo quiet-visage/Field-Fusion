@@ -26,15 +26,15 @@ set_property(TARGET field_fusion PROPERTY C_STANDARD 11)
 
 add_subdirectory("external/freetype-2.13.2")
 
-target_include_directories(field_fusion PUBLIC ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(field_fusion PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_include_directories(field_fusion PUBLIC ${FREETYPE_DIR})
 target_include_directories(field_fusion PUBLIC ${GLAD_HEADER_DIR})
 
 target_link_libraries(field_fusion PUBLIC freetype)
 target_link_libraries(field_fusion PUBLIC m)
 
-file(COPY ${CMAKE_SOURCE_DIR}/ff_shaders/ DESTINATION ff_shaders)
-file(COPY ${CMAKE_SOURCE_DIR}/ff_fonts/ DESTINATION ff_fonts)
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/ff_shaders/ DESTINATION ff_shaders)
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/ff_fonts/ DESTINATION ff_fonts)
 
 option(BUILD_DEMO "Build demo" OFF)
 if(BUILD_DEMO)

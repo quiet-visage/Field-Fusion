@@ -13,6 +13,6 @@ set_property(TARGET field_fusion_demo PROPERTY C_STANDARD 11)
 
 target_link_libraries(${PROJECT_NAME} PUBLIC field_fusion)
 target_link_libraries(${PROJECT_NAME} PUBLIC glfw)
-target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 
