@@ -1,13 +1,17 @@
 cmake_minimum_required(VERSION 3.5)
 
-if(NOT CMAKE_BUILD_TYPE)
-  set(CMAKE_BUILD_TYPE Debug)
-endif()
+if(${CMAKE_SOURCE_DIR} STREQUAL ${CMAKE_CURRENT_SOURCE_DIR})
 
-message(
-  "* build type options are : None Debug Release RelWithDebInfo MinSizeRel Sanitize"
-)
-message("* build type is : ${CMAKE_BUILD_TYPE}")
+  if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Debug)
+  endif(NOT CMAKE_BUILD_TYPE)
+
+  message(
+    "* build type options are : None Debug Release RelWithDebInfo MinSizeRel Sanitize"
+  )
+  message("* build type is : ${CMAKE_BUILD_TYPE}")
+
+endif()
 
 project(field_fusion C)
 
@@ -26,9 +30,10 @@ set_property(TARGET field_fusion PROPERTY C_STANDARD 11)
 
 add_subdirectory("external/freetype-2.13.2")
 
-target_include_directories(field_fusion PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_include_directories(field_fusion PUBLIC ${FREETYPE_DIR})
-target_include_directories(field_fusion PUBLIC ${GLAD_HEADER_DIR})
+target_include_directories(field_fusion
+                           PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(field_fusion PRIVATE ${FREETYPE_DIR})
+target_include_directories(field_fusion PRIVATE ${GLAD_HEADER_DIR})
 
 target_link_libraries(field_fusion PUBLIC freetype)
 target_link_libraries(field_fusion PUBLIC m)
@@ -48,3 +53,4 @@ set(CMAKE_EXE_LINKER_FLAGS_SANITIZE
     "-fsanitize=address"
     CACHE STRING "Flags used for linking binaries during sanitize builds."
           FORCE)
+
