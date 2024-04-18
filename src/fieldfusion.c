@@ -122,11 +122,8 @@ static size_t g_max_handle = 0;
 static ht_fpack_map_t g_fonts;
 
 ff_glyph_vec_t ff_glyph_vec_create() {
-    ulong initial_size = 2;
-    ulong elem_size = sizeof(ff_glyph_t);
-    return (ff_glyph_vec_t){.data = calloc(elem_size, initial_size),
-                            .size = 0,
-                            .capacity = elem_size * initial_size};
+    return (ff_glyph_vec_t){
+        .data = malloc(256), .size = 0, .capacity = 256};
 }
 
 void ff_glyph_vec_destroy(ff_glyph_vec_t *v) {
