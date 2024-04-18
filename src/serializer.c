@@ -319,7 +319,7 @@ int ff_serializer_serialize_glyph(FT_Face face, int code,
     meta_index = 0;
     point_ptr = (struct vec2 *)&point_buffer[0];
 
-    int corners[30];
+    int corners[64]; // NOTE: if stack smashing detected this is probably the cause 
     int len_corners = 0;
 
     ncontours = meta_buffer[meta_index++];
