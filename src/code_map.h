@@ -1,11 +1,5 @@
 #pragma once
 
-#include "freetype/fttypes.h"
-
-typedef struct {
-    struct ht_codepoint_entry *entries;
-} ht_codepoint_map_t;
-
 typedef struct {
     int code_index;
     float advance[2];

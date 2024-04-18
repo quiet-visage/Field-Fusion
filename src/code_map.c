@@ -1,8 +1,13 @@
 #include "code_map.h"
+
+#include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
+
 #define HASH_TABLE_SIZE 0x200
 
 static unsigned int int_hash(int key) {
-    ulong value = ((key >> 16) ^ key) * 0x45d9f3b;
+    size_t value = ((key >> 16) ^ key) * 0x45d9f3b;
     value = ((value >> 16) ^ value) * 0x45d9f3b;
     value = (value >> 16) ^ value;
 
