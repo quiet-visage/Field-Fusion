@@ -16,10 +16,6 @@ extern "C" {
 #include "../src/code_map.h"
 #include "assert.h"
 
-typedef unsigned long int ulong;
-typedef unsigned short int ushort;
-typedef unsigned int uint;
-
 typedef int ff_font_id_t;
 typedef int c32_t;
 
@@ -173,8 +169,8 @@ typedef struct {
 
 typedef struct {
     ff_glyph_t *data;
-    ulong size;
-    ulong capacity;
+    size_t len;
+    size_t cap;
 } ff_glyph_vec_t;
 
 typedef struct {
@@ -217,6 +213,16 @@ ff_dimensions_t ff_print_utf32(ff_glyph_t *glyphs, size_t *out_len,
                                ff_typo_t typo, float x, float y,
                                ff_print_flag_e flags,
                                ff_attrs_t *optional_attrs);
+ff_dimensions_t ff_print_utf32_vec(ff_glyph_vec_t *v,
+                                   const c32_t *str, size_t str_len,
+                                   ff_typo_t typo, float x, float y,
+                                   ff_print_flag_e flags,
+                                   ff_attrs_t *optional_attrs);
+ff_dimensions_t ff_print_utf8_vec(ff_glyph_vec_t *v, const char *str,
+                                  size_t str_len, ff_typo_t typo,
+                                  float x, float y,
+                                  ff_print_flag_e flags,
+                                  ff_attrs_t *optional_attrs);
 ff_dimensions_t ff_measure_utf32(const c32_t *str, size_t str_len,
                                  ff_font_id_t font, float size,
                                  bool with_kerning);

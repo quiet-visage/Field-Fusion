@@ -123,41 +123,41 @@ static ht_fpack_map_t g_fonts;
 
 ff_glyph_vec_t ff_glyph_vec_create() {
     return (ff_glyph_vec_t){
-        .data = malloc(256), .size = 0, .capacity = 256};
+        .data = malloc(256), .len = 0, .cap = 256};
 }
 
 void ff_glyph_vec_destroy(ff_glyph_vec_t *v) {
     free(v->data);
     v->data = 0;
-    v->size = 0;
-    v->capacity = 0;
+    v->len = 0;
+    v->cap = 0;
 }
 
 void ff_glyph_vec_push(ff_glyph_vec_t *v, ff_glyph_t glyph) {
-    ulong new_size = sizeof(ff_glyph_t) * (v->size + 1);
+    ulong new_size = sizeof(ff_glyph_t) * (v->len + 1);
 
-    if (new_size > v->capacity) {
-        v->capacity *= 2;
-        v->data = realloc(v->data, v->capacity);
+    if (new_size > v->cap) {
+        v->cap *= 2;
+        v->data = realloc(v->data, v->cap);
         assert(v->data != NULL && "bad alloc");
     }
 
-    v->data[v->size++] = glyph;
+    v->data[v->len++] = glyph;
 }
 
 void ff_glyph_vec_cat(ff_glyph_vec_t *dest, ff_glyph_vec_t *src) {
     ulong elem_size = sizeof(ff_glyph_t);
-    ulong src_size = src->size * elem_size;
+    ulong src_size = src->len * elem_size;
 
-    if (src_size > dest->capacity) {
-        dest->capacity += src_size;
-        dest->data = realloc(dest->data, dest->capacity);
+    if (src_size > dest->cap) {
+        dest->cap += src_size;
+        dest->data = realloc(dest->data, dest->cap);
     }
 
-    memcpy(dest->data + dest->size, src->data, src_size);
+    memcpy(dest->data + dest->len, src->data, src_size);
 }
 
-void ff_glyph_vec_clear(ff_glyph_vec_t *v) { v->size = 0; }
+void ff_glyph_vec_clear(ff_glyph_vec_t *v) { v->len = 0; }
 
 static const uint ht_fpack_table_size = 0x200;
 
@@ -1049,7 +1049,7 @@ ff_dimensions_t ff_print_utf32(ff_glyph_t *glyphs, size_t *out_len,
 
         bool is_space = codepoint == L' ';
         bool is_tab = codepoint == L'\t';
-        if (!(is_space || is_tab)) {
+        if (!is_space && !is_tab) {
             ff_glyph_t *new_glyph = &glyphs[i];
             new_glyph->position.x = pos0_x;
             new_glyph->position.y = pos0_y;
@@ -1078,6 +1078,24 @@ ff_dimensions_t ff_print_utf32(ff_glyph_t *glyphs, size_t *out_len,
 
     *out_len += str_len;
     return result;
+}
+
+inline ff_dimensions_t ff_print_utf32_vec(
+    ff_glyph_vec_t *v, const c32_t *str, size_t str_len,
+    ff_typo_t typo, float x, float y, ff_print_flag_e flags,
+    ff_attrs_t *optional_attrs) {
+    ff_glyphs_vec_prealloc(v, str_len);
+    return ff_print_utf32(&v->data[v->len], &v->len, str, str_len,
+                          typo, x, y, flags, optional_attrs);
+}
+
+inline ff_dimensions_t ff_print_utf8_vec(
+    ff_glyph_vec_t *v, const char *str, size_t str_len,
+    ff_typo_t typo, float x, float y, ff_print_flag_e flags,
+    ff_attrs_t *optional_attrs) {
+    ff_glyphs_vec_prealloc(v, str_len);
+    return ff_print_utf8(&v->data[v->len], &v->len, str, str_len,
+                         typo, x, y, flags, optional_attrs);
 }
 
 static ff_dimensions_t ff_measure(const ff_font_id_t font,
@@ -1177,10 +1195,10 @@ void ff_terminate() {
 }
 
 void ff_glyphs_vec_prealloc(ff_glyph_vec_t *v, size_t n_elements) {
-    size_t req_cap = (v->size + n_elements) * sizeof(*v->data);
+    size_t req_cap = (v->len + n_elements) * sizeof(*v->data);
 
-    while (req_cap > v->capacity) {
-        v->capacity *= 2;
-        v->data = realloc(v->data, v->capacity);
+    while (req_cap > v->cap) {
+        v->cap *= 2;
+        v->data = realloc(v->data, v->cap);
     }
 }
