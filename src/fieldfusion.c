@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <fieldfusion.h>
 #include <iconv.h>
 #include <math.h>
@@ -6,6 +7,7 @@
 #include <wchar.h>
 
 #include "code_map.h"
+#include "fpack_map.h"
 #include "freetype/freetype.h"
 #include "serializer.h"
 
@@ -23,7 +25,7 @@ __FF_EMBED_FILE(g_msdf_fragment, ff_shaders/ff_msdf.frag);
 __FF_EMBED_FILE(g_default_font, ff_fonts/SourceCodePro-Regular.ttf);
 // clang-format on
 
-enum endian { endian_le, endian_be };
+typedef enum { Endian_LE, Endian_BE } Endian;
 
 extern const char g_font_fragment[];
 extern const char g_font_geometry[];
@@ -34,7 +36,7 @@ extern const char g_msdf_fragment[];
 extern const unsigned char g_default_font[];
 extern const int g_default_font_len;
 
-static enum endian g_system_endianess;
+static Endian g_system_endianess;
 
 static iconv_t g_utf8_to_utf32;
 static iconv_t g_utf32_to_utf8;
@@ -48,7 +50,7 @@ typedef struct {
     float bearing_y;
     float glyph_width;
     float glyph_height;
-} ff_index_entry_t;
+} FF_Index_Entry;
 
 static const GLfloat g_mat4_zero_init[4][4] = {
     {0.0f, 0.0f, 0.0f, 0.0f},
@@ -83,8 +85,8 @@ static bool compile_shader(const char *source, GLenum type,
     return 1;
 }
 
-static void gen_extended_ascii(const ff_font_id_t font_handle) {
-    c32_t codepoints[0xff];
+static void gen_extended_ascii(const FF_Font_Id font_handle) {
+    C32 codepoints[0xff];
     for (ulong i = 0; i < 0xff; i += 1) codepoints[i] = i;
     ff_gen_glyphs(font_handle, codepoints, 0xff);
 }
@@ -119,22 +121,21 @@ static uint g_bbox_vao;
 static uint g_bbox_vbo;
 static int g_max_texture_size;
 static size_t g_max_handle = 0;
-static ht_fpack_map_t g_fonts;
+static FF_Fpack_Map g_fonts;
 
-ff_glyph_vec_t ff_glyph_vec_create() {
-    return (ff_glyph_vec_t){
-        .data = malloc(256), .len = 0, .cap = 256};
+FF_Glyph_Vec ff_glyph_vec_create() {
+    return (FF_Glyph_Vec){.data = malloc(256), .len = 0, .cap = 256};
 }
 
-void ff_glyph_vec_destroy(ff_glyph_vec_t *v) {
+void ff_glyph_vec_destroy(FF_Glyph_Vec *v) {
     free(v->data);
     v->data = 0;
     v->len = 0;
     v->cap = 0;
 }
 
-void ff_glyph_vec_push(ff_glyph_vec_t *v, ff_glyph_t glyph) {
-    ulong new_size = sizeof(ff_glyph_t) * (v->len + 1);
+void ff_glyph_vec_push(FF_Glyph_Vec *v, FF_Glyph glyph) {
+    ulong new_size = sizeof(FF_Glyph) * (v->len + 1);
 
     if (new_size > v->cap) {
         v->cap *= 2;
@@ -145,8 +146,8 @@ void ff_glyph_vec_push(ff_glyph_vec_t *v, ff_glyph_t glyph) {
     v->data[v->len++] = glyph;
 }
 
-void ff_glyph_vec_cat(ff_glyph_vec_t *dest, ff_glyph_vec_t *src) {
-    ulong elem_size = sizeof(ff_glyph_t);
+void ff_glyph_vec_cat(FF_Glyph_Vec *dest, FF_Glyph_Vec *src) {
+    ulong elem_size = sizeof(FF_Glyph);
     ulong src_size = src->len * elem_size;
 
     if (src_size > dest->cap) {
@@ -157,9 +158,7 @@ void ff_glyph_vec_cat(ff_glyph_vec_t *dest, ff_glyph_vec_t *src) {
     memcpy(dest->data + dest->len, src->data, src_size);
 }
 
-void ff_glyph_vec_clear(ff_glyph_vec_t *v) { v->len = 0; }
-
-static const uint ht_fpack_table_size = 0x200;
+void ff_glyph_vec_clear(FF_Glyph_Vec *v) { v->len = 0; }
 
 unsigned int ff_ht_int_hash(int key) {
     ulong value = ((key >> 16) ^ key) * 0x45d9f3b;
@@ -169,103 +168,8 @@ unsigned int ff_ht_int_hash(int key) {
     return value;
 }
 
-bool ht_fpack_map_entry_empty(struct ht_fpack_entry *entry) {
+bool ht_fpack_map_entry_empty(struct FF_Fpack_Entry_Struct *entry) {
     return !entry->not_empty;
-}
-
-struct ht_fpack_entry ht_fpack_map_entry_new(
-    int key, const ff_font_texture_pack_t value) {
-    struct ht_fpack_entry result = {
-        .not_empty = true,
-        .key = key,
-        .value = value,
-        .next = 0,
-    };
-    return result;
-}
-
-void ht_fpack_map_entry_free(ht_fpack_entry_t entry) {
-    // TODO FIX
-    struct ht_fpack_entry *head = entry.next;
-    while (head != NULL) {
-        struct ht_fpack_entry *tmp = head;
-        head = head->next;
-        free(tmp);
-    }
-}
-
-ht_fpack_map_t ht_fpack_map_create() {
-    ht_fpack_map_t hashtable = {0};
-
-    hashtable.entries = (struct ht_fpack_entry *)calloc(
-        ht_fpack_table_size, sizeof(struct ht_fpack_entry));
-
-    return hashtable;
-}
-
-void ht_fpack_map_set(ht_fpack_map_t *hashtable, int key,
-                      ff_font_texture_pack_t value) {
-    unsigned int slot = ff_ht_int_hash(key) % ht_fpack_table_size;
-
-    struct ht_fpack_entry *entry = &hashtable->entries[slot];
-
-    if (ht_fpack_map_entry_empty(entry)) {
-        hashtable->entries[slot] = ht_fpack_map_entry_new(key, value);
-        return;
-    }
-
-    struct ht_fpack_entry *prev = {0};
-    struct ht_fpack_entry *head = entry;
-
-    while (head) {
-        if (head->key == key) {
-            entry->value = value;
-            return;
-        }
-
-        // walk to next
-        prev = head;
-        head = prev->next;
-    }
-
-    prev->next = (struct ht_fpack_entry *)calloc(
-        1, sizeof(struct ht_fpack_entry));
-    struct ht_fpack_entry next = ht_fpack_map_entry_new(key, value);
-    memcpy(prev->next, &next, sizeof(struct ht_fpack_entry));
-}
-
-ff_font_texture_pack_t *ht_fpack_map_get(ht_fpack_map_t *hashtable,
-                                         int key) {
-    unsigned int slot = ff_ht_int_hash(key) % ht_fpack_table_size;
-
-    struct ht_fpack_entry *entry = &hashtable->entries[slot];
-
-    if (ht_fpack_map_entry_empty(entry)) {
-        return NULL;
-    }
-
-    ht_fpack_entry_t *head = entry;
-    while (head != NULL) {
-        if (head->key == key) {
-            return &head->value;
-        }
-
-        head = head->next;
-    }
-
-    // reaching here means there were >= 1 entries but no key match
-    return NULL;
-}
-
-void ht_fpack_map_free(ht_fpack_map_t *ht) {
-    for (ulong i = 0; i < ht_fpack_table_size; ++i) {
-        struct ht_fpack_entry entry = ht->entries[i];
-
-        if (ht_fpack_map_entry_empty(&entry)) continue;
-
-        ht_fpack_map_entry_free(entry);
-    }
-    free(ht->entries);
 }
 
 void ff_get_ortho_projection(float left, float right, float bottom,
@@ -292,9 +196,9 @@ void ff_initialize(const char *sl_version) {
     unsigned eni = 1;
     char *c;
     c = (char *)&eni;
-    g_system_endianess = *c == 1 ? endian_le : endian_be;
+    g_system_endianess = *c == 1 ? Endian_LE : Endian_BE;
 
-    if (g_system_endianess == endian_le) {
+    if (g_system_endianess == Endian_LE) {
         g_utf8_to_utf32 = iconv_open("UTF-32LE", "UTF-8");
         g_utf32_to_utf8 = iconv_open("UTF-8", "UTF-32LE");
     } else {
@@ -415,27 +319,17 @@ void ff_initialize(const char *sl_version) {
                  GL_STREAM_READ);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-    g_fonts = ht_fpack_map_create();
+    g_fonts = fpack_map_create();
     ff_new_load_font_from_memory(g_default_font, g_default_font_len,
-                                 ff_default_font_config());
+                                 FF_DEFAULT_FONT_CONFIG);
 }
 
-ff_font_config_t ff_default_font_config(void) {
-    return (ff_font_config_t){
-        .scale = 2.0f,
-        .range = 2.2f,
-        .texture_width = 1024,
-        .texture_padding = 4,
-    };
-}
-
-ff_font_id_t ff_new_load_font_from_memory(const unsigned char *bytes,
-                                          size_t size,
-                                          ff_font_config_t cfg) {
-    ff_font_id_t handle = g_max_handle;
-    ht_fpack_map_set(&g_fonts, handle, (ff_font_texture_pack_t){0});
-    ff_font_texture_pack_t *fpack =
-        ht_fpack_map_get(&g_fonts, handle);
+FF_Font_Id ff_new_load_font_from_memory(const unsigned char *bytes,
+                                        size_t size,
+                                        FF_Font_Config cfg) {
+    FF_Font_Id handle = g_max_handle;
+    fpack_map_set(&g_fonts, handle, (FF_Font_Texture_Pack){0});
+    FF_Font_Texture_Pack *fpack = fpack_map_get(&g_fonts, handle);
     fpack->font.font_path = 0;
     fpack->font.scale = cfg.scale;
     fpack->font.range = cfg.range;
@@ -470,11 +364,10 @@ ff_font_id_t ff_new_load_font_from_memory(const unsigned char *bytes,
     return handle;
 }
 
-ff_font_id_t ff_load_font(const char *path, ff_font_config_t cfg) {
-    ff_font_id_t handle = g_max_handle;
-    ht_fpack_map_set(&g_fonts, handle, (ff_font_texture_pack_t){0});
-    ff_font_texture_pack_t *fpack =
-        ht_fpack_map_get(&g_fonts, handle);
+FF_Font_Id ff_load_font(const char *path, FF_Font_Config cfg) {
+    FF_Font_Id handle = g_max_handle;
+    fpack_map_set(&g_fonts, handle, (FF_Font_Texture_Pack){0});
+    FF_Font_Texture_Pack *fpack = fpack_map_get(&g_fonts, handle);
     fpack->font.font_path = path;
     fpack->font.scale = cfg.scale;
     fpack->font.range = cfg.range;
@@ -508,8 +401,8 @@ ff_font_id_t ff_load_font(const char *path, ff_font_config_t cfg) {
     return handle;
 }
 
-void ff_unload_font(const ff_font_id_t font) {
-    ff_font_texture_pack_t *fpack = ht_fpack_map_get(&g_fonts, font);
+void ff_unload_font(const FF_Font_Id font) {
+    FF_Font_Texture_Pack *fpack = fpack_map_get(&g_fonts, font);
     if (fpack == NULL) return;
     FT_Done_Face(fpack->font.face);
     glDeleteBuffers(1, &fpack->font.meta_input_buffer);
@@ -523,7 +416,7 @@ void ff_unload_font(const ff_font_id_t font) {
     ff_map_destroy(&fpack->font.character_index);
 }
 
-int ff_gen_glyphs(const ff_font_id_t font, const c32_t *codepoints,
+int ff_gen_glyphs(const FF_Font_Id font, const C32 *codepoints,
                   const ulong codepoints_count) {
     GLint original_viewport[4];
     glGetIntegerv(GL_VIEWPORT, original_viewport);
@@ -533,11 +426,11 @@ int ff_gen_glyphs(const ff_font_id_t font, const c32_t *codepoints,
 
     if (nrender <= 0) return -1;
 
-    ff_font_texture_pack_t *fpack = ht_fpack_map_get(&g_fonts, font);
+    FF_Font_Texture_Pack *fpack = fpack_map_get(&g_fonts, font);
     assert(fpack != NULL);
 
     size_t *meta_sizes = NULL, *point_sizes = NULL;
-    ff_index_entry_t *atlas_index = NULL;
+    FF_Index_Entry *atlas_index = NULL;
     void *point_data = NULL, *metadata = NULL;
 
     /* We will start with a square texture. */
@@ -552,8 +445,8 @@ int ff_gen_glyphs(const ff_font_id_t font, const c32_t *codepoints,
     assert(point_sizes);
 
     /* Amount of new memory needed for the index. */
-    size_t index_size = nrender * sizeof(ff_index_entry_t);
-    atlas_index = (ff_index_entry_t *)calloc(1, index_size);
+    size_t index_size = nrender * sizeof(FF_Index_Entry);
+    atlas_index = (FF_Index_Entry *)calloc(1, index_size);
     assert(atlas_index);
 
     size_t meta_size_sum = 0, point_size_sum = 0;
@@ -586,7 +479,7 @@ int ff_gen_glyphs(const ff_font_id_t font, const c32_t *codepoints,
             continue;
         }
 
-        ff_map_item_t *m =
+        FF_Map_Item *m =
             ff_map_insert(&fpack->font.character_index, index);
         m->code_index = fpack->atlas.nglyphs + i;
         m->advance[0] =
@@ -660,7 +553,7 @@ int ff_gen_glyphs(const ff_font_id_t font, const c32_t *codepoints,
         glGenBuffers(1, &new_buffer);
         glBindBuffer(GL_ARRAY_BUFFER, new_buffer);
         glBufferData(GL_ARRAY_BUFFER,
-                     sizeof(ff_index_entry_t) * new_index_size, 0,
+                     sizeof(FF_Index_Entry) * new_index_size, 0,
                      GL_DYNAMIC_READ);
         assert(glGetError() != GL_OUT_OF_MEMORY);
         if (fpack->atlas.nglyphs) {
@@ -668,7 +561,7 @@ int ff_gen_glyphs(const ff_font_id_t font, const c32_t *codepoints,
                          fpack->atlas.index_buffer);
             glCopyBufferSubData(
                 GL_COPY_READ_BUFFER, GL_ARRAY_BUFFER, 0, 0,
-                fpack->atlas.nglyphs * sizeof(ff_index_entry_t));
+                fpack->atlas.nglyphs * sizeof(FF_Index_Entry));
             glBindBuffer(GL_COPY_READ_BUFFER, 0);
         }
         fpack->atlas.nallocated = new_index_size;
@@ -676,7 +569,7 @@ int ff_gen_glyphs(const ff_font_id_t font, const c32_t *codepoints,
         fpack->atlas.index_buffer = new_buffer;
     }
     glBufferSubData(GL_ARRAY_BUFFER,
-                    sizeof(ff_index_entry_t) * fpack->atlas.nglyphs,
+                    sizeof(FF_Index_Entry) * fpack->atlas.nglyphs,
                     index_size, atlas_index);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -801,7 +694,7 @@ int ff_gen_glyphs(const ff_font_id_t font, const c32_t *codepoints,
     int meta_offset = 0;
     int point_offset = 0;
     for (int i = 0; i < nrender; ++i) {
-        ff_index_entry_t g = atlas_index[i];
+        FF_Index_Entry g = atlas_index[i];
         float w = g.size_x;
         float h = g.size_y;
         GLfloat bounding_box[] = {0, 0, w, 0, 0, h, 0, h, w, 0, w, h};
@@ -857,9 +750,10 @@ int ff_gen_glyphs(const ff_font_id_t font, const c32_t *codepoints,
     return retval;
 }
 
-void ff_draw(ff_font_id_t font, const ff_glyph_t *glyphs,
-             ulong glyphs_len, const float *projection) {
-    ff_font_texture_pack_t *fpack = ht_fpack_map_get(&g_fonts, font);
+void ff_draw(const FF_Glyph *glyphs, ulong glyphs_len,
+             const float *projection, FF_Style style) {
+    FF_Font_Texture_Pack *fpack =
+        fpack_map_get(&g_fonts, style.typo.font);
 
     GLuint glyph_buffer;
     GLuint vao;
@@ -867,7 +761,7 @@ void ff_draw(ff_font_id_t font, const ff_glyph_t *glyphs,
     glGenVertexArrays(1, &vao);
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, glyph_buffer);
-    glBufferData(GL_ARRAY_BUFFER, glyphs_len * sizeof(ff_glyph_t),
+    glBufferData(GL_ARRAY_BUFFER, glyphs_len * sizeof(FF_Glyph),
                  &glyphs[0], GL_DYNAMIC_DRAW);
 
     glEnableVertexAttribArray(0);
@@ -878,29 +772,29 @@ void ff_draw(ff_font_id_t font, const ff_glyph_t *glyphs,
     glEnableVertexAttribArray(5);
     glEnableVertexAttribArray(6);
 
-    void *position_offset = (void *)offsetof(ff_glyph_t, position.x);
-    void *color_offset = (void *)offsetof(ff_glyph_t, color);
-    void *codepoint_offset = (void *)offsetof(ff_glyph_t, codepoint);
-    void *size_offset = (void *)offsetof(ff_glyph_t, size);
-    void *offset_offset = (void *)offsetof(ff_glyph_t, attrs.offset);
-    void *skew_offset = (void *)offsetof(ff_glyph_t, attrs.skew);
+    void *position_offset = (void *)offsetof(FF_Glyph, position.x);
+    void *color_offset = (void *)offsetof(FF_Glyph, color);
+    void *codepoint_offset = (void *)offsetof(FF_Glyph, codepoint);
+    void *size_offset = (void *)offsetof(FF_Glyph, size);
+    void *offset_offset = (void *)offsetof(FF_Glyph, attrs.offset);
+    void *skew_offset = (void *)offsetof(FF_Glyph, attrs.skew);
     void *strength_offset =
-        (void *)offsetof(ff_glyph_t, attrs.strength);
+        (void *)offsetof(FF_Glyph, attrs.strength);
 
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE,
-                          sizeof(ff_glyph_t), position_offset);
-    glVertexAttribIPointer(1, 4, GL_UNSIGNED_BYTE, sizeof(ff_glyph_t),
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(FF_Glyph),
+                          position_offset);
+    glVertexAttribIPointer(1, 4, GL_UNSIGNED_BYTE, sizeof(FF_Glyph),
                            color_offset);
-    glVertexAttribIPointer(2, 1, GL_INT, sizeof(ff_glyph_t),
+    glVertexAttribIPointer(2, 1, GL_INT, sizeof(FF_Glyph),
                            codepoint_offset);
-    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE,
-                          sizeof(ff_glyph_t), size_offset);
-    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE,
-                          sizeof(ff_glyph_t), offset_offset);
-    glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE,
-                          sizeof(ff_glyph_t), skew_offset);
-    glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE,
-                          sizeof(ff_glyph_t), strength_offset);
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(FF_Glyph),
+                          size_offset);
+    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(FF_Glyph),
+                          offset_offset);
+    glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, sizeof(FF_Glyph),
+                          skew_offset);
+    glVertexAttribPointer(6, 1, GL_FLOAT, GL_FALSE, sizeof(FF_Glyph),
+                          strength_offset);
 
     /* Enable gamma correction if user didn't enabled it */
     bool is_srgb_enabled = glIsEnabled(GL_FRAMEBUFFER_SRGB);
@@ -957,11 +851,11 @@ void ff_draw(ff_font_id_t font, const ff_glyph_t *glyphs,
     glDeleteVertexArrays(1, &vao);
 }
 
-ff_attrs_t ff_get_default_attributes() {
-    return (ff_attrs_t){.offset = 0.f, .skew = 0.f, .strength = .5f};
+FF_Attr ff_get_default_attributes() {
+    return (FF_Attr){.offset = 0.f, .skew = 0.f, .strength = .5f};
 }
 
-size_t ff_utf8_to_utf32(c32_t *dest, const char *src,
+size_t ff_utf8_to_utf32(C32 *dest, const char *src,
                         const ulong src_len) {
     // return size_t-1 if it fails, otherwise return the destination
     // length
@@ -976,7 +870,7 @@ size_t ff_utf8_to_utf32(c32_t *dest, const char *src,
     return ((src_len) * 4 - out_left) / 4;
 }
 
-size_t ff_utf32_to_utf8(char *dest, const c32_t *src,
+size_t ff_utf32_to_utf8(char *dest, const C32 *src,
                         const ulong src_len) {
     // return size_t-1 if it fails, otherwise return the destination
     // length
@@ -991,37 +885,31 @@ size_t ff_utf32_to_utf8(char *dest, const c32_t *src,
     return ((src_len) * 4 - out_left) / 4;
 }
 
-ff_dimensions_t ff_print_utf8(ff_glyph_t *glyphs, size_t *out_len,
-                              const char *str, size_t str_len,
-                              ff_typo_t typo, float x, float y,
-                              ff_print_flag_e flags,
-                              ff_attrs_t *optional_attrs) {
-    c32_t str32[str_len];
+FF_Dimensions ff_print_utf8(FF_Glyph *glyphs, size_t *out_len,
+                            const char *str, size_t str_len, float x,
+                            float y, FF_Style style) {
+    C32 str32[str_len];
     ff_utf8_to_utf32(str32, str, str_len);
-    return ff_print_utf32(glyphs, out_len, str32, str_len, typo, x, y,
-                          flags, optional_attrs);
+    return ff_print_utf32(glyphs, out_len, str32, str_len, x, y,
+                          style);
 }
 
-ff_dimensions_t ff_print_utf32(ff_glyph_t *glyphs, size_t *out_len,
-                               const c32_t *str, size_t str_len,
-                               ff_typo_t typo, float x, float y,
-                               ff_print_flag_e flags,
-                               ff_attrs_t *optional_attrs) {
-    ff_attrs_t attrs = optional_attrs ? *optional_attrs
-                                      : ff_get_default_attributes();
-    ff_dimensions_t result = {0};
-    ff_font_texture_pack_t *fpack =
-        ht_fpack_map_get(&g_fonts, typo.font);
+FF_Dimensions ff_print_utf32(FF_Glyph *glyphs, size_t *out_len,
+                             const C32 *str, size_t str_len, float x,
+                             float y, FF_Style style) {
+    FF_Dimensions result = {0};
+    FF_Font_Texture_Pack *fpack =
+        fpack_map_get(&g_fonts, style.typo.font);
     float pos0_x = x;
-    float pos0_y = y + typo.size;
+    float pos0_y = y + style.typo.size;
 
     for (size_t i = 0; i < str_len; i++) {
-        c32_t codepoint = str[i];
+        C32 codepoint = str[i];
 
-        ff_map_item_t *idx =
+        FF_Map_Item *idx =
             ff_map_get(&fpack->font.character_index, codepoint);
         if (!idx) {
-            ff_gen_glyphs(typo.font, &codepoint, 1);
+            ff_gen_glyphs(style.typo.font, &codepoint, 1);
             idx = ff_map_get(&fpack->font.character_index, codepoint);
             if (!idx) {
                 codepoint = 0x25a1;
@@ -1033,10 +921,10 @@ ff_dimensions_t ff_print_utf32(ff_glyph_t *glyphs, size_t *out_len,
 
         FT_Vector kerning = {0};
         const bool kerning_is_viable =
-            (flags & ff_flag_enable_kerning) &&
+            (style.flags & FF_FLAG_ENABLE_KERNING) &&
             FT_HAS_KERNING(fpack->font.face) && (i > 0);
         if (kerning_is_viable) {
-            c32_t previous_character = str[i - 1];
+            C32 previous_character = str[i - 1];
             FT_Get_Kerning(
                 fpack->font.face,
                 FT_Get_Char_Index(fpack->font.face,
@@ -1045,29 +933,29 @@ ff_dimensions_t ff_print_utf32(ff_glyph_t *glyphs, size_t *out_len,
                 FT_KERNING_UNSCALED, &kerning);
         }
 
-        glyphs[i] = (ff_glyph_t){0};
+        glyphs[i] = (FF_Glyph){0};
 
         bool is_space = codepoint == L' ';
         bool is_tab = codepoint == L'\t';
         if (!is_space && !is_tab) {
-            ff_glyph_t *new_glyph = &glyphs[i];
+            FF_Glyph *new_glyph = &glyphs[i];
             new_glyph->position.x = pos0_x;
             new_glyph->position.y = pos0_y;
-            new_glyph->color = typo.color;
+            new_glyph->color = style.typo.color;
             new_glyph->codepoint = idx->code_index;
-            new_glyph->size = typo.size;
-            new_glyph->attrs = attrs;
+            new_glyph->size = style.typo.size;
+            new_glyph->attrs = style.attributes;
         }
 
         float y_adv = (idx->advance[1] + kerning.y) *
-                      (typo.size * g_dpi[0] / 72.0f) /
+                      (style.typo.size * g_dpi[0] / 72.0f) /
                       fpack->font.face->units_per_EM;
         float x_adv = (idx->advance[0] + kerning.x) *
-                      (typo.size * g_dpi[0] / 72.0f) /
+                      (style.typo.size * g_dpi[0] / 72.0f) /
                       fpack->font.face->units_per_EM;
         if (is_tab) x_adv *= 4;
 
-        if (flags & ff_flag_print_vertically) {
+        if (style.flags & FF_FLAG_PRINT_VERTICALLY) {
             pos0_y += y_adv;
             result.width = fmaxf(result.width, x_adv);
         } else {
@@ -1076,53 +964,52 @@ ff_dimensions_t ff_print_utf32(ff_glyph_t *glyphs, size_t *out_len,
         }
     }
 
-    *out_len += str_len;
+    if (out_len) *out_len += str_len;
     return result;
 }
 
-inline ff_dimensions_t ff_print_utf32_vec(
-    ff_glyph_vec_t *v, const c32_t *str, size_t str_len,
-    ff_typo_t typo, float x, float y, ff_print_flag_e flags,
-    ff_attrs_t *optional_attrs) {
+inline FF_Dimensions ff_print_utf32_vec(FF_Glyph_Vec *v,
+                                        const C32 *str,
+                                        size_t str_len, float x,
+                                        float y, FF_Style style) {
     ff_glyphs_vec_prealloc(v, str_len);
-    return ff_print_utf32(&v->data[v->len], &v->len, str, str_len,
-                          typo, x, y, flags, optional_attrs);
+    return ff_print_utf32(&v->data[v->len], &v->len, str, str_len, x,
+                          y, style);
 }
 
-inline ff_dimensions_t ff_print_utf8_vec(
-    ff_glyph_vec_t *v, const char *str, size_t str_len,
-    ff_typo_t typo, float x, float y, ff_print_flag_e flags,
-    ff_attrs_t *optional_attrs) {
+inline FF_Dimensions ff_print_utf8_vec(FF_Glyph_Vec *v,
+                                       const char *str,
+                                       size_t str_len, float x,
+                                       float y, FF_Style style) {
     ff_glyphs_vec_prealloc(v, str_len);
-    return ff_print_utf8(&v->data[v->len], &v->len, str, str_len,
-                         typo, x, y, flags, optional_attrs);
+    return ff_print_utf8(&v->data[v->len], &v->len, str, str_len, x,
+                         y, style);
 }
 
-static ff_dimensions_t ff_measure(const ff_font_id_t font,
-                                  const c32_t *str, size_t str_len,
-                                  const float size,
-                                  const bool with_kerning) {
-    ff_font_texture_pack_t *fpack = ht_fpack_map_get(&g_fonts, font);
-
-    ff_dimensions_t result = {0};
+static FF_Dimensions ff_measure(const C32 *str, size_t str_len,
+                                FF_Style style) {
+    FF_Font_Texture_Pack *fpack =
+        fpack_map_get(&g_fonts, style.typo.font);
+    FF_Dimensions result = {0};
 
     for (size_t i = 0; i < str_len; i++) {
-        c32_t codepoint = str[i];
+        C32 codepoint = str[i];
 
-        ff_map_item_t *idx =
+        FF_Map_Item *idx =
             ff_map_get(&fpack->font.character_index, codepoint);
         if (!idx) {
-            ff_gen_glyphs(font, &codepoint, 1);
+            ff_gen_glyphs(style.typo.font, &codepoint, 1);
             idx = ff_map_get(&fpack->font.character_index, codepoint);
             assert(idx);
         }
 
         FT_Vector kerning = {0};
+        bool with_kerning = style.flags & FF_FLAG_ENABLE_KERNING;
         const bool should_get_kerning =
             with_kerning && FT_HAS_KERNING(fpack->font.face) &&
             (i > 0);
         if (should_get_kerning) {
-            c32_t previous_character = str[i - 1];
+            C32 previous_character = str[i - 1];
             FT_Get_Kerning(
                 fpack->font.face,
                 FT_Get_Char_Index(fpack->font.face,
@@ -1132,11 +1019,11 @@ static ff_dimensions_t ff_measure(const ff_font_id_t font,
         }
 
         float height = (idx->advance[1] + kerning.y) *
-                       (size * g_dpi[1] / 72.0f) /
+                       (style.typo.size * g_dpi[1] / 72.0f) /
                        fpack->font.face->units_per_EM;
         result.height = fmax(result.height, height);
         float x_adv = (idx->advance[0] + kerning.x) *
-                      (size * g_dpi[0] / 72.0f) /
+                      (style.typo.size * g_dpi[0] / 72.0f) /
                       fpack->font.face->units_per_EM;
         if (codepoint == L'\t') x_adv *= 4;
         result.width += x_adv;
@@ -1145,22 +1032,34 @@ static ff_dimensions_t ff_measure(const ff_font_id_t font,
     return result;
 }
 
-ff_dimensions_t ff_measure_utf32(const c32_t *str, size_t str_len,
-                                 ff_font_id_t font, float size,
-                                 bool with_kerning) {
-    return ff_measure(font, str, str_len, size, with_kerning);
+void ff_draw_str32(const C32 *str, size_t len, float x, float y,
+                   float *projection, FF_Style style) {
+    FF_Glyph glyphs[len];
+    ff_print_utf32(glyphs, 0, str, len, x, y, style);
+    ff_draw(glyphs, len, projection, style);
 }
 
-ff_dimensions_t ff_measure_utf8(const char *str, size_t str_len,
-                                ff_font_id_t font, float size,
-                                bool with_kerning) {
-    c32_t str32[str_len];
+void ff_draw_str8(const char *str, size_t len, float x, float y,
+                  float *projection, FF_Style style) {
+    FF_Glyph glyphs[len];
+    ff_print_utf8(glyphs, 0, str, len, x, y, style);
+    ff_draw(glyphs, len, projection, style);
+}
+
+FF_Dimensions ff_measure_utf32(const C32 *str, size_t str_len,
+                               FF_Style style) {
+    return ff_measure(str, str_len, style);
+}
+
+FF_Dimensions ff_measure_utf8(const char *str, size_t str_len,
+                              FF_Style style) {
+    C32 str32[str_len];
     ff_utf8_to_utf32(str32, str, str_len);
 
-    return ff_measure(font, str32, str_len, size, with_kerning);
+    return ff_measure(str32, str_len, style);
 }
 
-void ff_set_glyphs_pos(ff_glyph_t *glyphs, size_t count, float x,
+void ff_set_glyphs_pos(FF_Glyph *glyphs, size_t count, float x,
                        float y) {
     if (!count) return;
     float advances_x[count];
@@ -1188,13 +1087,13 @@ void ff_set_glyphs_pos(ff_glyph_t *glyphs, size_t count, float x,
 
 void ff_terminate() {
     for (ulong i = 0; i < g_max_handle; i += 1) ff_unload_font(i);
-    ht_fpack_map_free(&g_fonts);
+    fpack_map_free(&g_fonts);
     FT_Done_FreeType(g_ft_library);
     iconv_close(g_utf32_to_utf8);
     iconv_close(g_utf8_to_utf32);
 }
 
-void ff_glyphs_vec_prealloc(ff_glyph_vec_t *v, size_t n_elements) {
+void ff_glyphs_vec_prealloc(FF_Glyph_Vec *v, size_t n_elements) {
     size_t req_cap = (v->len + n_elements) * sizeof(*v->data);
 
     while (req_cap > v->cap) {
