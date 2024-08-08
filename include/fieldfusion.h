@@ -111,6 +111,7 @@ typedef struct {
 
 void ff_initialize(const char *sl_version);
 void ff_terminate();
+FF_Style ff_style_create(void);
 FF_Font_Id ff_new_load_font_from_memory(const unsigned char *bytes,
                                         size_t size,
                                         FF_Font_Config config);

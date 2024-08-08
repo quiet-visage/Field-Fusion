@@ -1,8 +1,8 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #define GLAD_GL_IMPLEMENTATION
-#include <glad.h>
 #include <assert.h>
+#include <glad.h>
 
 #define FIELDFUSION_DONT_INCLUDE_GLAD
 #define FIELDFUSION_IMPLEMENTATION
@@ -44,8 +44,9 @@ int main() {
     ff_glyphs_vec_prealloc(&glyphs, 16);
 
     FF_Typo typo = {0, 16.f, 0xffffffff};
-    ff_print_utf32(glyphs.data, &glyphs.len, dest, 15, typo, 100, 200,
-                   FF_FLAG_DEFAULT, 0);
+    FF_Style style = ff_style_create();
+    ff_print_utf32(glyphs.data, &glyphs.len, dest, 15, 100, 200,
+                   style);
 
     float projection[4][4];
     ff_get_ortho_projection(0, kwindow_width, kwindow_height, 0,
@@ -53,9 +54,9 @@ int main() {
 
     for (; !glfwWindowShouldClose(window);) {
         glClear(GL_COLOR_BUFFER_BIT);
-        ff_draw(0, glyphs.data, glyphs.len, (float *)projection);
+        ff_draw(glyphs.data, glyphs.len, (float *)projection, style);
         ff_draw_str32(L"Hello", 5, 300, 300, (float *)projection,
-                      typo, FF_FLAG_DEFAULT, 0);
+                      style);
         glfwSwapBuffers(window);
         glfwPollEvents();
     }

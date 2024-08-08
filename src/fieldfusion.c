@@ -324,6 +324,15 @@ void ff_initialize(const char *sl_version) {
                                  FF_DEFAULT_FONT_CONFIG);
 }
 
+FF_Style ff_style_create(void) {
+    FF_Style result = {0};
+    result.typo.size = 12.f;
+    result.typo.color = 0xffffffff;
+    result.attributes = ff_get_default_attributes();
+    result.flags = FF_FLAG_DEFAULT;
+    return result;
+}
+
 FF_Font_Id ff_new_load_font_from_memory(const unsigned char *bytes,
                                         size_t size,
                                         FF_Font_Config cfg) {
@@ -957,9 +966,11 @@ FF_Dimensions ff_print_utf32(FF_Glyph *glyphs, size_t *out_len,
 
         if (style.flags & FF_FLAG_PRINT_VERTICALLY) {
             pos0_y += y_adv;
+            result.height += y_adv;
             result.width = fmaxf(result.width, x_adv);
         } else {
             pos0_x += x_adv;
+            result.width += x_adv;
             result.height = fmaxf(result.height, x_adv);
         }
     }
