@@ -971,7 +971,7 @@ FF_Dimensions ff_print_utf32(FF_Glyph *glyphs, size_t *out_len,
         } else {
             pos0_x += x_adv;
             result.width += x_adv;
-            result.height = fmaxf(result.height, x_adv);
+            result.height = fmaxf(result.height, y_adv);
         }
     }
 
@@ -1043,18 +1043,20 @@ static FF_Dimensions ff_measure(const C32 *str, size_t str_len,
     return result;
 }
 
-void ff_draw_str32(const C32 *str, size_t len, float x, float y,
+FF_Dimensions ff_draw_str32(const C32 *str, size_t len, float x, float y,
                    float *projection, FF_Style style) {
     FF_Glyph glyphs[len];
-    ff_print_utf32(glyphs, 0, str, len, x, y, style);
+    FF_Dimensions result = ff_print_utf32(glyphs, 0, str, len, x, y, style);
     ff_draw(glyphs, len, projection, style);
+    return result;
 }
 
-void ff_draw_str8(const char *str, size_t len, float x, float y,
+FF_Dimensions ff_draw_str8(const char *str, size_t len, float x, float y,
                   float *projection, FF_Style style) {
     FF_Glyph glyphs[len];
-    ff_print_utf8(glyphs, 0, str, len, x, y, style);
+    FF_Dimensions result = ff_print_utf8(glyphs, 0, str, len, x, y, style);
     ff_draw(glyphs, len, projection, style);
+    return result;
 }
 
 FF_Dimensions ff_measure_utf32(const C32 *str, size_t str_len,

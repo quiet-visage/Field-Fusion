@@ -121,9 +121,9 @@ int ff_gen_glyphs(FF_Font_Id font, const C32 *codepoints,
                   ulong codepoints_len);
 void ff_draw(const FF_Glyph *glyphs, ulong glyphs_len,
              const float *projection, FF_Style style);
-void ff_draw_str32(const C32 *str, size_t len, float x, float y,
+FF_Dimensions ff_draw_str32(const C32 *str, size_t len, float x, float y,
                    float *projection, FF_Style style);
-void ff_draw_str8(const char *str, size_t len, float x, float y,
+FF_Dimensions ff_draw_str8(const char *str, size_t len, float x, float y,
                   float *projection, FF_Style style);
 FF_Attr ff_get_default_attributes();
 size_t ff_utf8_to_utf32(C32 *dest, const char *src, ulong src_len);
