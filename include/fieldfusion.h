@@ -96,17 +96,19 @@ typedef struct {
 } FF_Font_Config;
 
 typedef enum {
-    FF_FLAG_DEFAULT = 0x1,
+    FF_FLAG_DEFAULT = 0x1 | 0x2,
     FF_FLAG_ENABLE_KERNING = 0x1,
-    FF_FLAG_PRINT_VERTICALLY = 0x2,
-    FF_FLAG_DRAW_SPACE = 0x4,
-    FF_FLAG_DRAW_TABS = 0x8,
+    FF_FLAG_HANDLE_NEW_LINES = 0x2,
+    FF_FLAG_PRINT_VERTICALLY = 0x4,
+    FF_FLAG_DRAW_SPACE = 0x8,
+    FF_FLAG_DRAW_TABS = 0x10,
 } FF_Print_Flag;
 
 typedef struct {
     FF_Typo typo;
     FF_Print_Flag flags;
     FF_Attr attributes;
+    float new_line_vertical_spacing;
 } FF_Style;
 
 void ff_initialize(const char *sl_version);
@@ -121,10 +123,12 @@ int ff_gen_glyphs(FF_Font_Id font, const C32 *codepoints,
                   ulong codepoints_len);
 void ff_draw(const FF_Glyph *glyphs, ulong glyphs_len,
              const float *projection, FF_Style style);
-FF_Dimensions ff_draw_str32(const C32 *str, size_t len, float x, float y,
-                   float *projection, FF_Style style);
-FF_Dimensions ff_draw_str8(const char *str, size_t len, float x, float y,
-                  float *projection, FF_Style style);
+FF_Dimensions ff_draw_str32(const C32 *str, size_t len, float x,
+                            float y, float *projection,
+                            FF_Style style);
+FF_Dimensions ff_draw_str8(const char *str, size_t len, float x,
+                           float y, float *projection,
+                           FF_Style style);
 FF_Attr ff_get_default_attributes();
 size_t ff_utf8_to_utf32(C32 *dest, const char *src, ulong src_len);
 size_t ff_utf32_to_utf8(char *dest, const C32 *src, ulong src_len);
