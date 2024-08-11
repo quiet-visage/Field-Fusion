@@ -11,7 +11,7 @@
   <a href="#compiling">Compiling</a> 
 </p>
 
-![2024-08-09-044850_1366x768_scrot](https://github.com/user-attachments/assets/5ef59018-3791-4292-bf1a-9d6c57b8bbda)
+![newscr](https://github.com/user-attachments/assets/07a72d87-9f16-45e1-9813-244a2aa7452c)
 
 ## Compiling
 
