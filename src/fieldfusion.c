@@ -22,7 +22,7 @@ __FF_EMBED_FILE(g_font_fragment, ff_shaders/ff_font.frag);
 __FF_EMBED_FILE(g_font_geometry, ff_shaders/ff_font.geo);
 __FF_EMBED_FILE(g_msdf_vertex, ff_shaders/ff_msdf.vert);
 __FF_EMBED_FILE(g_msdf_fragment, ff_shaders/ff_msdf.frag);
-__FF_EMBED_FILE(g_default_font, ff_fonts/SourceCodePro-Regular.ttf);
+__FF_EMBED_FILE(g_default_font, ff_fonts/MPLUS1p-Medium.ttf);
 // clang-format on
 
 typedef enum { Endian_LE, Endian_BE } Endian;
