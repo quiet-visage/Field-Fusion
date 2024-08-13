@@ -40,5 +40,5 @@ void main() {
     float luma = Luma(v);
     v = mix(vec3(luma), v, uSaturation);
 
-    color = vec4(v, opacity);
+    color = vec4(v, opacity * text_color.a);
 }
