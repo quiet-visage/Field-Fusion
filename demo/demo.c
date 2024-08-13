@@ -60,7 +60,6 @@ int main() {
     init_gl_ctx();
     ff_initialize("440");
 
-    FF_Typo typo = {0, 16.f, 0xffffffff};
     FF_Style style = ff_style_create();
     float projection[4][4];
     ff_get_ortho_projection(0, kwindow_width, kwindow_height, 0,
