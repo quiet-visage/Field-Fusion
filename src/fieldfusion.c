@@ -1063,7 +1063,6 @@ static FF_Dimensions ff_measure(const C32 *str, size_t str_len,
             else
                 tmp_width += x_adv;
 
-            tmp_width += x_adv;
             if (style.flags & FF_FLAG_HANDLE_NEW_LINES &&
                 codepoint == '\n') {
                 result.height +=
